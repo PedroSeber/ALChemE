@@ -15,7 +15,6 @@ class HEN:
         self.flow_unit = flow_unit
         self.temp_unit = temp_unit
         self.cp_unit = cp_unit
-        self.first_utility = None
         self.streams = OrderedDict()
     
     def add_stream(self, t1, t2, cp, flow_rate = 1, stream_name = None, flow_unit = None, temp_unit = None, cp_unit = None):
@@ -86,7 +85,7 @@ class HEN:
             print('Warning: there is no pinch point nor a first utility\n')
         
         self.last_utility = -q_sum[-1] * self.flow_unit*local_temp_unit*self.cp_unit
-        self.enthalpy_hot = [0, enthalpy_hot] # The first value in enthalpy_hot is defined as 0
+        self.enthalpy_hot = np.insert(enthalpy_hot, 0, 0) # The first value in enthalpy_hot is defined as 0
         # Shifting the cold enthalpy so that the first value starts at positive last_utility
         self.enthalpy_cold = np.insert(enthalpy_cold[:-1], 0, -self.last_utility)
         print('The last utility is %g %s\n' % (self.last_utility, self.last_utility.units))
@@ -128,7 +127,7 @@ class HEN:
         axis_delta = max(self.delta_t, 20) # Shifts the y-axis by at least 20 degrees
         ax1.set_xlim(-0.5, len(temperatures)-0.5)
         ax1.set_ylim(np.min(temperatures) - axis_delta, np.max(temperatures) + axis_delta)
-        ax1.set_ylabel(f"Hot temperatures ({self.temp_unit})")
+        ax1.set_ylabel(f'Hot temperatures ({self.temp_unit})')
         ax1.set_yticks(np.linspace(np.min(temperatures) - axis_delta, np.max(temperatures) + axis_delta, 11))
         q_above_text_loc = ax1.get_ylim()[1] - 0.01*(ax1.get_ylim()[1] - ax1.get_ylim()[0])
         q_below_text_loc = ax1.get_ylim()[0] + 0.04*(ax1.get_ylim()[1] - ax1.get_ylim()[0])
@@ -173,31 +172,26 @@ class HEN:
             ax1.text(np.mean(ax1.get_xlim()), self._plotted_ylines[-2-self.first_utility_loc] - 1, 'Pinch Point', ha = 'center', va = 'top')
         plt.show(block = False)
 
-        """
+    def make_cc(self):
+        plt.rcParams['axes.titlesize'] = 5
+        plt.rcParams['axes.labelsize'] = 5
+        plt.rcParams['font.size'] = 3
+
+        fig2, ax2 = plt.subplots(dpi = 350)
+        ax2.set_title('Composite Curve')
+        ax2.set_ylabel(f'Temperature ({self.temp_unit})')
+        ax2.set_xlabel(f'Enthalpy ({self.first_utility.units})')
+        # A given interval may not have hot or cold streams. The indexing of self.plotted_ylines attempts to fix this
+        # There will still be issues if all streams on one side fully skip one or more intervals
+        # TODO: use streams_in_interval1 and 2 to index self.plotted_ylines 
+        ax2.plot(np.cumsum(self.enthalpy_hot), self._plotted_ylines[-len(self.enthalpy_hot):], '-or', linewidth = 0.25, ms = 1.5) # Assumes the topmost interval has a hot stream
+        ax2.plot(np.cumsum(self.enthalpy_cold), self._plotted_ylines[:len(self.enthalpy_cold)] - self.delta_t, '-ob', linewidth = 0.25, ms = 1.5) # Assumes the lowermost interval has a cold stream
+        plt.show(block = False)
+
+        """ TODO: remove whitespace around the graphs
         ax = gca;
         ti = ax.TightInset;
         ax.Position = [ti(1), ti(2), 1 - ti(1) - ti(3), 1 - ti(2) - ti(4)]; % Removing whitespace from the graph
-        
-        
-        % Adding heats and Cp values to the graph
-        q_above = sum(streams_in_interval(:, end-first_utility_loc+1:end) .* cp_vals .* delta_plotted_ylines(end-first_utility_loc+1:end), 2);
-        q_below = sum(streams_in_interval(:, 1:end-first_utility_loc) .* cp_vals .* delta_plotted_ylines(1:end-first_utility_loc), 2);
-        for idx = 1:length(temperatures)
-            text(idx-0.08, ax.YLim(1)+(ax.YLim(2)-ax.YLim(1))/190*5, sprintf("C_P = %g", cp_vals(idx))) % C_P values near the bottom
-            text(idx-0.10, ax.YLim(1)+(ax.YLim(2)-ax.YLim(1))/190*10, sprintf("Q_B_o_t = %g", q_below(idx)))
-            text(idx-0.10, ax.YLim(2)-5, sprintf("Q_T_o_p = %g", q_above(idx)))
-        end
-        
-        % Plotting the temperature-enthalpy diagram
-        fig2 = figure('units', 'normalized', 'outerposition', [0 0.03 0.925 0.925], 'DefaultAxesFontSize', 20);
-        hold on
-        title('Composite Curves')
-        xlabel('Enthalpy')
-        ylabel(strcat("Temperature (", temp_unit, " )"))
-        % There may not be hot or cold streams at a given interval. This slicing fixes that, at least partially
-        % There will still be issues if all streams on one side "skip" at least one interval
-        plot(cumsum(enthalpy_hot), plotted_ylines(end-length(enthalpy_hot)+1:end), '-or')
-        plot(cumsum(enthalpy_cold), plotted_ylines(1:length(enthalpy_cold)) - delta_t, '-ob')
         """
 
 class Stream():
