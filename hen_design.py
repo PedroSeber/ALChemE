@@ -66,11 +66,11 @@ class HEN:
         tmp1 = np.atleast_2d(np.max(temperatures[~hot_streams, :], axis = 1)).T >= np.atleast_2d(self._plotted_ylines[1:] - self.delta_t)
         tmp2 = np.atleast_2d(np.min(temperatures[~hot_streams, :], axis = 1)).T <= np.atleast_2d(self._plotted_ylines[:-1] - self.delta_t)
         streams_in_interval2 = (tmp1 & tmp2).astype(np.int8)
-        streams_in_interval = np.concatenate((streams_in_interval1, -streams_in_interval2)) # Hot streams, then -cold streams
         delta_plotted_ylines = self._plotted_ylines[1:] - self._plotted_ylines[:-1]
-        q_interval = np.sum(streams_in_interval * cp_vals * delta_plotted_ylines, axis = 0) # sum(FCp_hot - FCp_cold) * delta_t_interval
         enthalpy_hot = np.sum(streams_in_interval1 * cp_vals[hot_streams] * delta_plotted_ylines, axis = 0) # sum(FCp_hot) * delta_t
         enthalpy_cold = np.sum(streams_in_interval2 * cp_vals[~hot_streams] * delta_plotted_ylines, axis = 0) # sum(FCp_cold) * delta_t
+        q_interval = enthalpy_hot - enthalpy_cold # sum(FCp_hot - FCp_cold) * delta_t_interval
+        
         
         q_interval = q_interval[::-1] # Flipping the heat array so it starts from the top
         q_sum = np.cumsum(q_interval)
@@ -92,8 +92,11 @@ class HEN:
         print('The last utility is %g %s\n' % (self.last_utility, self.last_utility.units))
 
         # Getting heats above / below pinch for each stream
-        q_above = np.sum(streams_in_interval[:, self.first_utility_loc:] * cp_vals * delta_plotted_ylines[self.first_utility_loc:], axis = 1) # Double check the location of the pinch cutoff [the first_utility_loc: thing]
-        q_below = np.sum(streams_in_interval[:, :self.first_utility_loc] * cp_vals * delta_plotted_ylines[:self.first_utility_loc], axis = 1)
+        streams_in_interval = np.zeros((len(self.streams), len(delta_plotted_ylines)), dtype = np.int8)
+        streams_in_interval[hot_streams, :] = streams_in_interval1
+        streams_in_interval[~hot_streams, :] = -1*streams_in_interval2
+        q_above = np.sum(streams_in_interval[:, -1-self.first_utility_loc:] * cp_vals * delta_plotted_ylines[-1-self.first_utility_loc:], axis = 1)
+        q_below = np.sum(streams_in_interval[:, :-1-self.first_utility_loc] * cp_vals * delta_plotted_ylines[:-1-self.first_utility_loc], axis = 1)
         for idx, elem in enumerate(self.streams):
             self.streams[elem].q_above = q_above[idx] * self.first_utility.units
             self.streams[elem].q_below = q_below[idx] * self.first_utility.units
