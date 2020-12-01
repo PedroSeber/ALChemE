@@ -4,6 +4,56 @@ import unyt
 from collections import namedtuple, OrderedDict
 import pdb
 
+import tkinter as tk
+
+class stream_table(tk.Frame):
+    def __init__(self, parent, rows, columns):
+        HEN_data_stream_labels = ['Inlet Temperature', 'Outlet Temperature',
+                                  'Mass Flow Rate', 'Heat Capacity']
+
+        tk.Frame.__init__(self, parent)
+
+        self._entry = {}
+        self.rows = rows + 1
+        self.columns = columns
+
+        for row in range(self.rows):
+            for column in range(self.columns):
+                if row == 0:
+                    l = tk.Label(self, text=HEN_data_stream_labels[column])
+                    l.grid(row=row, column=column)
+                else:
+                    index = (row, column)
+                    e = tk.Entry(self)
+                    e.grid(row=row, column=column, stick="nsew")
+                    self._entry[index] = e
+
+    def get(self):
+        stream_results = []
+        for row in range(self.rows):
+            if row != 0:
+                current_row = []
+                for column in range(self.columns):
+                    index = (row, column)
+                    current_row.append(self._entry[index].get())
+                stream_results.append(current_row)
+        return stream_results
+
+class HEN_main(tk.Frame):
+    def __init__(self, parent):
+        tk.Frame.__init__(self, parent)
+        self.table = stream_table(self, 4, 4)
+        self.runAnalysis = tk.Button(self, text="Run Analysis", command=self.on_submit)
+        self.table.pack(side="top", fill="both")
+        self.runAnalysis.pack(side="bottom")
+
+    def on_submit(self):
+        print(self.table.get())
+
+root=tk.Tk()
+HEN_main(root).pack(side="top", fill="both")
+root.mainloop()
+
 class HEN:
     """
     A class that holds streams and exchangers, used to solve HEN problems
