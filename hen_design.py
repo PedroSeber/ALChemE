@@ -80,7 +80,7 @@ class HEN:
             self.first_utility_loc = np.where(q_sum == first_utility)[0][0] # np.where returns a tuple that contains an array containing the location
             self.first_utility = -first_utility * self.flow_unit*local_temp_unit*self.cp_unit # It's a heat going in, so we want it to be positive
             q_sum[self.first_utility_loc:] = q_sum[self.first_utility_loc:] + self.first_utility.value
-            print('The first utility is %g %s, located after the interval %d\n' % (self.first_utility, self.first_utility.units, self.first_utility_loc+1))
+            print('The first utility is %g %s, located after interval %d\n' % (self.first_utility, self.first_utility.units, self.first_utility_loc+1))
         else: # No pinch point
             self.first_utility_loc = len(q_sum)
             print('Warning: there is no pinch point nor a first utility\n')
@@ -101,7 +101,7 @@ class HEN:
             self.streams[elem].q_above = q_above[idx] * self.first_utility.units
             self.streams[elem].q_below = q_below[idx] * self.first_utility.units
 
-    def make_tid(self): # Add a show_middle_temps, show_q parameter for customization
+    def make_tid(self, show_temperatures = True, show_properties = True): # Add a show_middle_temps, show_q parameter for customization
         """
         This function plots a temperature-interval diagram using the streams and exchangers currently associated with this HEN object.
         self.get_parameters() must be called before this function.
@@ -131,6 +131,8 @@ class HEN:
         ax1.set_ylabel(f"Hot temperatures ({self.temp_unit})")
         ax1.set_yticks(np.linspace(np.min(temperatures) - axis_delta, np.max(temperatures) + axis_delta, 11))
         q_above_text_loc = ax1.get_ylim()[1] - 0.01*(ax1.get_ylim()[1] - ax1.get_ylim()[0])
+        q_below_text_loc = ax1.get_ylim()[0] + 0.04*(ax1.get_ylim()[1] - ax1.get_ylim()[0])
+        cp_text_loc = ax1.get_ylim()[0] + 0.01*(ax1.get_ylim()[1] - ax1.get_ylim()[0])
         
         
         # Manipulating the temperatures so that the hot and cold values are on the same y-position, even though they're shifted by delta_t
@@ -146,15 +148,20 @@ class HEN:
                 tplot2 = temperatures[idx, 1] + self.delta_t
 
             ax1.vlines(idx, tplot1, tplot2, color = my_color, linewidth = 0.25) # Vertical line for each stream
-            q_above_text = r'$Q_{Top}$ = %g %s' % (self.streams[x_tick_labels[idx]].q_above, self.streams[x_tick_labels[idx]].q_above.units)
-            ax1.text(idx, q_above_text_loc, q_above_text, ha = 'center', va = 'top') # Heat above the pinch point
-            print(ax1.get_ylim())
+            if show_properties:
+                q_above_text = r'$Q_{Top}$ = %g %s' % (self.streams[x_tick_labels[idx]].q_above, self.streams[x_tick_labels[idx]].q_above.units)
+                ax1.text(idx, q_above_text_loc, q_above_text, ha = 'center', va = 'top') # Heat above the pinch point
+                q_below_text = r'$Q_{Bot}$ = %g %s' % (self.streams[x_tick_labels[idx]].q_below, self.streams[x_tick_labels[idx]].q_below.units)
+                ax1.text(idx, q_below_text_loc, q_below_text, ha = 'center', va = 'bottom') # Heat below the pinch point
+                cp_text = r'$C_p$ = %g %s' % (self.streams[x_tick_labels[idx]].cp, self.streams[x_tick_labels[idx]].cp.units)
+                ax1.text(idx, cp_text_loc, cp_text, ha = 'center', va = 'bottom') # Heat below the pinch point
         
         # Horizontal lines for each temperature
         for elem in self._plotted_ylines:
             ax1.axhline(elem, color = 'k', linewidth = 0.25)
-            my_label = str(elem) + str(self.temp_unit) + ' Hot side, ' + str(elem - self.delta_t) + str(self.temp_unit) + ' Cold side'
-            ax1.text(np.mean(ax1.get_xlim()), elem, my_label, ha = 'center', va = 'bottom')
+            if show_temperatures:
+                my_label = str(elem) + str(self.temp_unit) + ' Hot side, ' + str(elem - self.delta_t) + str(self.temp_unit) + ' Cold side'
+                ax1.text(np.mean(ax1.get_xlim()), elem, my_label, ha = 'center', va = 'bottom')
         
         # Labeling the x-axis with the stream names
         ax1.set_xticks(range(len(temperatures)))
@@ -162,7 +169,8 @@ class HEN:
 
         # Adding the pinch point
         ax1.axhline(self._plotted_ylines[-2-self.first_utility_loc], color = 'k', linewidth = 0.5) # Arrays start at 0 but end at -1, so we need an extra -1 in this line and the next
-        ax1.text(np.mean(ax1.get_xlim()), self._plotted_ylines[-2-self.first_utility_loc] - 1, 'Pinch Point', ha = 'center', va = 'top')
+        if show_temperatures:
+            ax1.text(np.mean(ax1.get_xlim()), self._plotted_ylines[-2-self.first_utility_loc] - 1, 'Pinch Point', ha = 'center', va = 'top')
         plt.show(block = False)
 
         """
