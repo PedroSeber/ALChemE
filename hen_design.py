@@ -85,6 +85,7 @@ class HEN:
             q_sum[self.first_utility_loc:] = q_sum[self.first_utility_loc:] + self.first_utility.value
             print('The first utility is %g %s, located after interval %d\n' % (self.first_utility, self.first_utility.units, self.first_utility_loc+1))
         else: # No pinch point
+            self.first_utility = 0 * self.flow_unit*self.delta_temp_unit*self.cp_unit
             self.first_utility_loc = len(q_sum)
             print('Warning: there is no pinch point nor a first utility\n')
         
@@ -293,7 +294,6 @@ class HEN:
             while f'E{idx}' in self.exchangers.keys():
                 idx +=1
             exchanger_name = f'E{idx}'
-        pdb.set_trace()
         delta_T_lm = (delta_T1.value - delta_T2.value) / (np.log(delta_T1.value/delta_T2.value)) * self.delta_temp_unit
         self.exchangers[exchanger_name] = HeatExchanger(stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type)
             
@@ -313,6 +313,18 @@ class Stream():
         else: # Cold stream
             self.current_t_above = None
             self.current_t_below = self.t1
+    
+    def __repr__(self):
+        if self.t1 > self.t2:
+            stream_type = 'Hot'
+        else:
+            stream_type = 'Cold'
+        text =(f'{stream_type} stream with T_in = {self.t1} and T_out = {self.t2}\n'
+            f'c_p = {self.cp} and flow rate = {self.flow_rate}\n')
+        if self.q_above is not None:
+            text += f'Above pinch: {self.q_above} total, {self.q_above_remaining} remaining, T = {self.current_t_above}\n'
+            text += f'Below pinch: {self.q_below} total, {self.q_below_remaining} remaining, T = {self.current_t_below}\n'
+        return text
 
 class HeatExchanger():
     def __init__(self, stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type):
