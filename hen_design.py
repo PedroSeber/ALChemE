@@ -199,6 +199,20 @@ class HEN:
         # TODO: use streams_in_interval1 and 2 to index self.plotted_ylines 
         ax2.plot(np.cumsum(self.enthalpy_hot), self._plotted_ylines[-len(self.enthalpy_hot):], '-or', linewidth = 0.25, ms = 1.5) # Assumes the topmost interval has a hot stream
         ax2.plot(np.cumsum(self.enthalpy_cold), self._plotted_ylines[:len(self.enthalpy_cold)] - self.delta_t.value, '-ob', linewidth = 0.25, ms = 1.5) # Assumes the lowermost interval has a cold stream
+
+        # Text showing the utilities and overlap
+        top_text_loc = ax2.get_ylim()[1] - 0.03*(ax2.get_ylim()[1] - ax2.get_ylim()[0])
+        cold_text_loc = ax2.get_xlim()[0] + 0.03*(ax2.get_xlim()[1] - ax2.get_xlim()[0])
+        cold_text = 'Cold utility:\n%4g %s' % (self.last_utility, self.last_utility.units)
+        ax2.text(cold_text_loc, top_text_loc, cold_text, ha = 'left', va = 'top')
+        hot_text_loc = ax2.get_xlim()[1] - 0.03*(ax2.get_xlim()[1] - ax2.get_xlim()[0])
+        hot_text = 'Hot utility:\n%4g %s' % (self.first_utility, self.first_utility.units)
+        ax2.text(hot_text_loc, top_text_loc, hot_text, ha = 'right', va = 'top')
+        overlap_text_loc = np.mean(ax2.get_xlim())
+        overlap = np.minimum(np.cumsum(self.enthalpy_hot)[-1], np.cumsum(self.enthalpy_cold)[-1]) - np.maximum(self.enthalpy_hot[0], self.enthalpy_cold[0])
+        overlap_text = 'Heat recovery:\n%4g %s' % (overlap, self.first_utility.units)
+        ax2.text(overlap_text_loc, top_text_loc, overlap_text, ha = 'center', va = 'top')
+
         plt.show(block = False)
 
         """ TODO: remove whitespace around the graphs
