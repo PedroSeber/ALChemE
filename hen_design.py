@@ -9,15 +9,24 @@ class HEN:
     A class that holds streams and exchangers, used to solve HEN problems
     """
     def __init__(self, delta_t = 10, cold_cost = 7e-3, hot_cost = 11e-3, flow_unit = unyt.kg/unyt.s, temp_unit = unyt.degC, cp_unit = unyt.J/(unyt.delta_degC*unyt.kg)):
-        self.delta_t = delta_t
+        self.delta_t = delta_t * temp_unit
         self.cold_cost = cold_cost
         self.hot_cost = hot_cost
         self.flow_unit = flow_unit
         self.temp_unit = temp_unit
         self.cp_unit = cp_unit
         self.streams = OrderedDict()
+        self.exchangers = OrderedDict()
+
+        # Making unyt work since it doesn't like multiplying with °C and °F
+        if self.temp_unit == unyt.degC:
+            self.delta_temp_unit = unyt.delta_degC
+        elif self.temp_unit == unyt.degF:
+            self.delta_temp_unit = unyt.delta_degF
+        else:
+            self.delta_temp_unit = temp_unit
     
-    def add_stream(self, t1, t2, cp, flow_rate = 1, stream_name = None, flow_unit = None, temp_unit = None, cp_unit = None):
+    def add_stream(self, t1, t2, cp, flow_rate = 1, stream_name = None, temp_unit = None, cp_unit = None, flow_unit = None):
         if flow_unit is None:
             flow_unit = self.flow_unit
         if temp_unit is None:
@@ -40,34 +49,29 @@ class HEN:
         """
         This function obtains parameters (enthalpies, pinch temperature, heats above / below pinch) for the streams associated with this HEN object.
         """
-        # Making unyt work since it doesn't allow multiplication of °C and °F
-        if self.temp_unit == unyt.degC:
-            local_temp_unit = unyt.delta_degC
-        elif self.temp_unit == unyt.degF:
-            local_temp_unit = unyt.delta_degF
 
         # Starting array from class data
         temperatures = np.empty( (len(self.streams), 2) )
         cp_vals = np.empty( (len(self.streams), 1) )
 
         for idx, values in enumerate(self.streams.items()): # values[0] has the stream names, values[1] has the properties
-            temperatures[idx, 0], temperatures[idx, 1] = values[1].t1.value, values[1].t2.value
-            cp_vals[idx, 0] = values[1].cp.value
+            temperatures[idx, 0], temperatures[idx, 1] = values[1].t1, values[1].t2
+            cp_vals[idx, 0] = values[1].cp * values[1].flow_rate
         
-        hot_streams = temperatures[:, 0] > temperatures[:, 1]
-        plotted_ylines = np.concatenate((temperatures[hot_streams, :].flatten(), temperatures[~hot_streams, :].flatten() + self.delta_t))
+        self.hot_streams = temperatures[:, 0] > temperatures[:, 1]
+        plotted_ylines = np.concatenate((temperatures[self.hot_streams, :].flatten(), temperatures[~self.hot_streams, :].flatten() + self.delta_t.value))
         self._plotted_ylines = np.sort(np.unique(plotted_ylines))
 
         # Getting the heat and enthalpies at each interval
-        tmp1 = np.atleast_2d(np.max(temperatures[hot_streams, :], axis = 1)).T >= np.atleast_2d(self._plotted_ylines[1:])
-        tmp2 = np.atleast_2d(np.min(temperatures[hot_streams, :], axis = 1)).T <= np.atleast_2d(self._plotted_ylines[:-1])
+        tmp1 = np.atleast_2d(np.max(temperatures[self.hot_streams, :], axis = 1)).T >= np.atleast_2d(self._plotted_ylines[1:])
+        tmp2 = np.atleast_2d(np.min(temperatures[self.hot_streams, :], axis = 1)).T <= np.atleast_2d(self._plotted_ylines[:-1])
         streams_in_interval1 = (tmp1 & tmp2).astype(np.int8) # Numpy treats this as boolean if I don't convert the type
-        tmp1 = np.atleast_2d(np.max(temperatures[~hot_streams, :], axis = 1)).T >= np.atleast_2d(self._plotted_ylines[1:] - self.delta_t)
-        tmp2 = np.atleast_2d(np.min(temperatures[~hot_streams, :], axis = 1)).T <= np.atleast_2d(self._plotted_ylines[:-1] - self.delta_t)
+        tmp1 = np.atleast_2d(np.max(temperatures[~self.hot_streams, :], axis = 1)).T >= np.atleast_2d(self._plotted_ylines[1:] - self.delta_t.value)
+        tmp2 = np.atleast_2d(np.min(temperatures[~self.hot_streams, :], axis = 1)).T <= np.atleast_2d(self._plotted_ylines[:-1] - self.delta_t.value)
         streams_in_interval2 = (tmp1 & tmp2).astype(np.int8)
         delta_plotted_ylines = self._plotted_ylines[1:] - self._plotted_ylines[:-1]
-        enthalpy_hot = np.sum(streams_in_interval1 * cp_vals[hot_streams] * delta_plotted_ylines, axis = 0) # sum(FCp_hot) * delta_t
-        enthalpy_cold = np.sum(streams_in_interval2 * cp_vals[~hot_streams] * delta_plotted_ylines, axis = 0) # sum(FCp_cold) * delta_t
+        enthalpy_hot = np.sum(streams_in_interval1 * cp_vals[self.hot_streams] * delta_plotted_ylines, axis = 0) # sum(FCp_hot) * delta_t
+        enthalpy_cold = np.sum(streams_in_interval2 * cp_vals[~self.hot_streams] * delta_plotted_ylines, axis = 0) # sum(FCp_cold) * delta_t
         q_interval = enthalpy_hot - enthalpy_cold # sum(FCp_hot - FCp_cold) * delta_t_interval
         
         
@@ -77,14 +81,15 @@ class HEN:
         if np.min(q_sum) <= 0:
             first_utility = np.min(q_sum) # First utility is added to the minimum sum of heats, even if it isn't the first negative val
             self.first_utility_loc = np.where(q_sum == first_utility)[0][0] # np.where returns a tuple that contains an array containing the location
-            self.first_utility = -first_utility * self.flow_unit*local_temp_unit*self.cp_unit # It's a heat going in, so we want it to be positive
+            self.first_utility = -first_utility * self.flow_unit*self.delta_temp_unit*self.cp_unit # It's a heat going in, so we want it to be positive
             q_sum[self.first_utility_loc:] = q_sum[self.first_utility_loc:] + self.first_utility.value
             print('The first utility is %g %s, located after interval %d\n' % (self.first_utility, self.first_utility.units, self.first_utility_loc+1))
         else: # No pinch point
+            self.first_utility = 0 * self.flow_unit*self.delta_temp_unit*self.cp_unit
             self.first_utility_loc = len(q_sum)
             print('Warning: there is no pinch point nor a first utility\n')
         
-        self.last_utility = -q_sum[-1] * self.flow_unit*local_temp_unit*self.cp_unit
+        self.last_utility = -q_sum[-1] * self.flow_unit*self.delta_temp_unit*self.cp_unit
         self.enthalpy_hot = np.insert(enthalpy_hot, 0, 0) # The first value in enthalpy_hot is defined as 0
         # Shifting the cold enthalpy so that the first value starts at positive last_utility
         self.enthalpy_cold = np.insert(enthalpy_cold[:-1], 0, -self.last_utility)
@@ -92,13 +97,21 @@ class HEN:
 
         # Getting heats above / below pinch for each stream
         streams_in_interval = np.zeros((len(self.streams), len(delta_plotted_ylines)), dtype = np.int8)
-        streams_in_interval[hot_streams, :] = streams_in_interval1
-        streams_in_interval[~hot_streams, :] = -1*streams_in_interval2
-        q_above = np.sum(streams_in_interval[:, -1-self.first_utility_loc:] * cp_vals * delta_plotted_ylines[-1-self.first_utility_loc:], axis = 1)
-        q_below = np.sum(streams_in_interval[:, :-1-self.first_utility_loc] * cp_vals * delta_plotted_ylines[:-1-self.first_utility_loc], axis = 1)
+        streams_in_interval[self.hot_streams, :] = streams_in_interval1
+        streams_in_interval[~self.hot_streams, :] = -1*streams_in_interval2
+        self._interval_heats_above = streams_in_interval[:, -1-self.first_utility_loc:] * cp_vals * delta_plotted_ylines[-1-self.first_utility_loc:] # Used in the optimization step
+        q_above = np.sum(self._interval_heats_above, axis = 1)
+        self._interval_heats_below = streams_in_interval[:, :-1-self.first_utility_loc] * cp_vals * delta_plotted_ylines[:-1-self.first_utility_loc] # Used in the optimization step
+        q_below = np.sum(self._interval_heats_below, axis = 1)
         for idx, elem in enumerate(self.streams):
             self.streams[elem].q_above = q_above[idx] * self.first_utility.units
+            self.streams[elem].q_above_remaining = q_above[idx] * self.first_utility.units
             self.streams[elem].q_below = q_below[idx] * self.first_utility.units
+            self.streams[elem].q_below_remaining = q_below[idx] * self.first_utility.units
+            if self.streams[elem].current_t_above is None:
+                self.streams[elem].current_t_above = self._plotted_ylines[self.first_utility_loc] * self.temp_unit - self.delta_t # Shifting the cold temperature by delta T
+            elif self.streams[elem].current_t_below is None:
+                self.streams[elem].current_t_below = self._plotted_ylines[self.first_utility_loc] * self.temp_unit
 
     def make_tid(self, show_temperatures = True, show_properties = True): # Add a show_middle_temps, show_q parameter for customization
         """
@@ -124,7 +137,7 @@ class HEN:
         # Plotting the temperature graphs
         fig1, ax1 = plt.subplots(dpi = 350)
         ax1.set_title('Temperature Interval Diagram')
-        axis_delta = max(self.delta_t, 20) # Shifts the y-axis by at least 20 degrees
+        axis_delta = max(self.delta_t.value, 20) # Shifts the y-axis by at least 20 degrees
         ax1.set_xlim(-0.5, len(temperatures)-0.5)
         ax1.set_ylim(np.min(temperatures) - axis_delta, np.max(temperatures) + axis_delta)
         ax1.set_ylabel(f'Hot temperatures ({self.temp_unit})')
@@ -143,8 +156,8 @@ class HEN:
                 tplot2 = temperatures[idx, 1]
             else:
                 my_color = 'b'
-                tplot1 = temperatures[idx, 0] + self.delta_t
-                tplot2 = temperatures[idx, 1] + self.delta_t
+                tplot1 = temperatures[idx, 0] + self.delta_t.value
+                tplot2 = temperatures[idx, 1] + self.delta_t.value
 
             ax1.vlines(idx, tplot1, tplot2, color = my_color, linewidth = 0.25) # Vertical line for each stream
             if show_properties:
@@ -159,7 +172,7 @@ class HEN:
         for elem in self._plotted_ylines:
             ax1.axhline(elem, color = 'k', linewidth = 0.25)
             if show_temperatures:
-                my_label = str(elem) + str(self.temp_unit) + ' Hot side, ' + str(elem - self.delta_t) + str(self.temp_unit) + ' Cold side'
+                my_label = str(elem) + str(self.temp_unit) + ' Hot side, ' + str(elem - self.delta_t.value) + str(self.temp_unit) + ' Cold side'
                 ax1.text(np.mean(ax1.get_xlim()), elem, my_label, ha = 'center', va = 'bottom')
         
         # Labeling the x-axis with the stream names
@@ -185,7 +198,21 @@ class HEN:
         # There will still be issues if all streams on one side fully skip one or more intervals
         # TODO: use streams_in_interval1 and 2 to index self.plotted_ylines 
         ax2.plot(np.cumsum(self.enthalpy_hot), self._plotted_ylines[-len(self.enthalpy_hot):], '-or', linewidth = 0.25, ms = 1.5) # Assumes the topmost interval has a hot stream
-        ax2.plot(np.cumsum(self.enthalpy_cold), self._plotted_ylines[:len(self.enthalpy_cold)] - self.delta_t, '-ob', linewidth = 0.25, ms = 1.5) # Assumes the lowermost interval has a cold stream
+        ax2.plot(np.cumsum(self.enthalpy_cold), self._plotted_ylines[:len(self.enthalpy_cold)] - self.delta_t.value, '-ob', linewidth = 0.25, ms = 1.5) # Assumes the lowermost interval has a cold stream
+
+        # Text showing the utilities and overlap
+        top_text_loc = ax2.get_ylim()[1] - 0.03*(ax2.get_ylim()[1] - ax2.get_ylim()[0])
+        cold_text_loc = ax2.get_xlim()[0] + 0.03*(ax2.get_xlim()[1] - ax2.get_xlim()[0])
+        cold_text = 'Cold utility:\n%4g %s' % (self.last_utility, self.last_utility.units)
+        ax2.text(cold_text_loc, top_text_loc, cold_text, ha = 'left', va = 'top')
+        hot_text_loc = ax2.get_xlim()[1] - 0.03*(ax2.get_xlim()[1] - ax2.get_xlim()[0])
+        hot_text = 'Hot utility:\n%4g %s' % (self.first_utility, self.first_utility.units)
+        ax2.text(hot_text_loc, top_text_loc, hot_text, ha = 'right', va = 'top')
+        overlap_text_loc = np.mean(ax2.get_xlim())
+        overlap = np.minimum(np.cumsum(self.enthalpy_hot)[-1], np.cumsum(self.enthalpy_cold)[-1]) - np.maximum(self.enthalpy_hot[0], self.enthalpy_cold[0])
+        overlap_text = 'Heat recovery:\n%4g %s' % (overlap, self.first_utility.units)
+        ax2.text(overlap_text_loc, top_text_loc, overlap_text, ha = 'center', va = 'top')
+
         plt.show(block = False)
 
         """ TODO: remove whitespace around the graphs
@@ -194,11 +221,132 @@ class HEN:
         ax.Position = [ti(1), ti(2), 1 - ti(1) - ti(3), 1 - ti(2) - ti(4)]; % Removing whitespace from the graph
         """
 
+    def place_exchangers(self):
+        def _objective(self, residuals = None, Q_exchanger_above = None):
+            # Starting up
+            if residuals is None:
+                residuals_above = np.zeros( (np.sum(self.hot_streams), self._interval_heats_above.shape[-1] + 1) ) # Extra interval is the heat coming in from "above the highest interval" (that is, always 0)
+            if Q_exchanger_above is None:
+                Q_exchanger_above = np.zeros((np.sum(self.hot_streams), self._interval_heats_above.shape[-1], np.sum(~self.hot_streams))) # Hot streams, intervals, and cold streams
+
+            #Q_exchanger_above is how much heat each exchanger will transfer. It's multiplied by another array to remove matches where there are no streams
+            eqn1 = self._interval_heats_above[self.hot_streams] + residuals_above[:, :-1] - residuals_above[:, 1:] - np.sum(Q_exchanger_above, axis = 2)*np.array(self._interval_heats_above[~self.hot_streams], dtype = bool)
+            eqn2 = self._interval_heats_above[~self.hot_streams] - np.sum(Q_exchanger_above, axis = 0)*np.array(self._interval_heats_above[self.hot_streams], dtype = bool)
+            eqn3 = self.aaa - - np.sum(Q_exchanger_above, axis = 1)*np.array(self._interval_heats_above[self.hot_streams], dtype = bool)
+            #for i in range(1, len(self._plotted_ylines+1)): # i is the number of intervals
+                #self._interval_heats_above[:, -i] + 
+
+    def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, t_in = None, t_out = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), exchanger_type = 'Fixed head'):
+        if pinch.casefold() == 'above' or pinch.casefold() == 'top' or pinch.casefold() == 'up':
+            if t_in is not None and t_out is not None: # Operating the exchanger using temperatures
+                if ref_stream == 1:
+                    heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
+                else:
+                    heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
+            elif type(heat) is str and heat.casefold() == 'auto':
+                heat = np.minimum(np.abs(self.streams[stream1].q_above_remaining), np.abs(self.streams[stream2].q_above_remaining)) # Maximum heat exchanged is the minimum total heat between streams
+            else: # Heat passed was a number, and no temperatures were passed
+                heat = heat * self.streams[stream1].q_above.units
+
+            if self.streams[stream1].q_above_remaining < 0: # We want Stream1 to be the hot stream, but it's currently the cold stream
+                stream1, stream2 = stream2, stream1
+            s1_q_above = self.streams[stream1].q_above_remaining - heat
+            s1_t_above = self.streams[stream1].current_t_above - heat/(self.streams[stream1].cp * self.streams[stream1].flow_rate)
+            s2_q_above = self.streams[stream2].q_above_remaining + heat
+            s2_t_above = self.streams[stream2].current_t_above + heat/(self.streams[stream2].cp * self.streams[stream2].flow_rate)
+            
+            # Data validation
+            if s1_t_above < s2_t_above:
+                raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_above}, while the cold stream is leaving with a temperature of {s2_t_above}')
+            else:
+                if s1_t_above - s2_t_above < self.delta_t:
+                    print(f"Warning: match violates minimum ΔT, which equals {self.delta_t}\nThis match's ΔT is {s1_t_above-s2_t_above}")
+            
+            # Recording the data
+            delta_T1 = self.streams[stream1].current_t_above - s2_t_above
+            delta_T2 = s1_t_above - self.streams[stream2].current_t_above
+            self.streams[stream1].q_above_remaining = s1_q_above
+            self.streams[stream1].current_t_above = s1_t_above
+            self.streams[stream2].q_above_remaining = s2_q_above
+            self.streams[stream2].current_t_above = s2_t_above
+
+        elif pinch.casefold() == 'below' or pinch.casefold() == 'bottom' or pinch.casefold() == 'bot' or pinch.casefold == 'down':
+            if t_in is not None and t_out is not None: # Operating the exchanger using temperatures
+                if ref_stream == 1:
+                    heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
+                else:
+                    heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
+            elif type(heat) is str and heat.casefold() == 'auto':
+                heat = np.minimum(np.abs(self.streams[stream1].q_below_remaining), np.abs(self.streams[stream2].q_below_remaining)) # Maximum heat exchanged is the minimum total heat between streams
+            else: # Heat passed was a number, and no temperatures were passed
+                heat = heat * self.streams[stream1].q_above.units
+            
+            if self.streams[stream1].q_below_remaining < 0: # We want Stream1 to be the hot stream, but it's currently the cold stream
+                stream1, stream2 = stream2, stream1
+            s1_q_below = self.streams[stream1].q_below_remaining - heat
+            s1_t_below = self.streams[stream1].current_t_below - heat/(self.streams[stream1].cp * self.streams[stream1].flow_rate)
+            s2_q_below = self.streams[stream2].q_below_remaining + heat
+            s2_t_below = self.streams[stream2].current_t_below + heat/(self.streams[stream2].cp * self.streams[stream2].flow_rate)
+            
+            # Data validation
+            if s1_t_below < s2_t_below:
+                raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_below}, while the cold stream is leaving with a temperature of {s2_t_below}')
+            else:
+                if s1_t_below - s2_t_below < self.delta_t:
+                    print(f"Warning: match violates minimum ΔT, which equals {self.delta_t}\nThis match's ΔT is {s1_t_below-s2_t_below}")
+            
+            # Recording the data
+            delta_T1 = self.streams[stream1].current_t_below - s2_t_below
+            delta_T2 = s1_t_below - self.streams[stream2].current_t_below
+            self.streams[stream1].q_below_remaining = s1_q_below
+            self.streams[stream1].current_t_below = s1_t_below
+            self.streams[stream2].q_below_remaining = s2_q_below
+            self.streams[stream2].current_t_below = s2_t_below
+        
+        if exchanger_name is None:
+            idx = 1
+            while f'E{idx}' in self.exchangers.keys():
+                idx +=1
+            exchanger_name = f'E{idx}'
+        delta_T_lm = (delta_T1.value - delta_T2.value) / (np.log(delta_T1.value/delta_T2.value)) * self.delta_temp_unit
+        self.exchangers[exchanger_name] = HeatExchanger(stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type)
+            
+
 class Stream():
     def __init__(self, t1, t2, cp, flow_rate, flow_unit, temp_unit, cp_unit):
         self.t1 = t1 * temp_unit
         self.t2 = t2 * temp_unit
         self.cp = cp * cp_unit
         self.flow_rate = flow_rate * flow_unit
-        self.q_above = None
+        self.q_above = None # Will be updated once pinch point is found
         self.q_below = None
+
+        if self.t1 > self.t2: # Hot stream
+            self.current_t_above = self.t1
+            self.current_t_below = None # Will be updated once pinch point is found
+        else: # Cold stream
+            self.current_t_above = None
+            self.current_t_below = self.t1
+    
+    def __repr__(self):
+        if self.t1 > self.t2:
+            stream_type = 'Hot'
+        else:
+            stream_type = 'Cold'
+        text =(f'{stream_type} stream with T_in = {self.t1} and T_out = {self.t2}\n'
+            f'c_p = {self.cp} and flow rate = {self.flow_rate}\n')
+        if self.q_above is not None:
+            text += f'Above pinch: {self.q_above} total, {self.q_above_remaining} remaining, T = {self.current_t_above}\n'
+            text += f'Below pinch: {self.q_below} total, {self.q_below_remaining} remaining, T = {self.current_t_below}\n'
+        return text
+
+class HeatExchanger():
+    def __init__(self, stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type):
+        self.stream1 = stream1
+        self.stream2 = stream2
+        self.heat = heat
+        self.pinch = pinch
+        self.U = U * U_unit
+        self.delta_T_lm = delta_T_lm
+        self.area = self.heat / (self.U * self.delta_T_lm)
+        self.exchanger_type = exchanger_type
