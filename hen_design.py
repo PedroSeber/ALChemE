@@ -9,6 +9,7 @@ import pdb
 import tkinter as tk
 from tkinter import ttk
 import os
+import pickle
 
 #################################################################################################################
 # SECTION 1 - FRONT END
@@ -402,7 +403,6 @@ class HEN:
         ax2.text(overlap_text_loc, top_text_loc, overlap_text, ha = 'center', va = 'top')
 
         plt.show(block = False)
-        
         # Embed into GUI
         generate_GUI_plot(fig2, tab_control, 'Composite Curve')
 
@@ -501,6 +501,13 @@ class HEN:
             exchanger_name = f'E{idx}'
         delta_T_lm = (delta_T1.value - delta_T2.value) / (np.log(delta_T1.value/delta_T2.value)) * self.delta_temp_unit
         self.exchangers[exchanger_name] = HeatExchanger(stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type)
+        
+    def save(self, name):
+        file_name = name + ".p"
+        pickle.dump(self, open( file_name, "wb" ))
+
+    def load(self,file):
+        return pickle.load(open(file, 'rb'))
             
 
 class Stream():
@@ -541,7 +548,7 @@ class HeatExchanger():
         self.delta_T_lm = delta_T_lm
         self.area = self.heat / (self.U * self.delta_T_lm)
         self.exchanger_type = exchanger_type
-        
+     
 ## SECTION ? - RUN APPLICATION
 HEN_app = HENOS_control_panel(root)
 root.mainloop()
