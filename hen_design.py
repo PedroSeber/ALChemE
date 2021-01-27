@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import unyt
 from collections import namedtuple, OrderedDict
 import pdb
+import pickle
 
 class HEN:
     """
@@ -310,7 +311,15 @@ class HEN:
             exchanger_name = f'E{idx}'
         delta_T_lm = (delta_T1.value - delta_T2.value) / (np.log(delta_T1.value/delta_T2.value)) * self.delta_temp_unit
         self.exchangers[exchanger_name] = HeatExchanger(stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type)
-            
+        
+    def save(self, name):
+        file_name = name + ".p"
+        pickle.dump(self, open( file_name, "wb" ))
+
+    def load(self,file):
+        return pickle.load(open(file, 'rb'))
+
+
 
 class Stream():
     def __init__(self, t1, t2, cp, flow_rate, flow_unit, temp_unit, cp_unit):
