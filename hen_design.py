@@ -1,10 +1,195 @@
+#################################################################################################################
+# SECTION 0 - IMPORT CALLS
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
 import unyt
 from collections import namedtuple, OrderedDict
 import pdb
+import tkinter as tk
+from tkinter import ttk
+import os
 import pickle
 
+#################################################################################################################
+# SECTION 1 - FRONT END
+
+dir_path = os.path.dirname(os.path.realpath(__file__))
+root = tk.Tk()
+
+# SECTION 1.1 - HEN Control Panel & Slaves
+class HENOS_control_panel:
+    '''
+    A class which initializes HENOS control panel.
+    '''
+    def __init__(self, master):
+        # Determine screen dimensions
+        swidth = master.winfo_screenwidth()
+        sheight = master.winfo_screenheight()
+        
+        # Icon
+        #master.iconbitmap(dir_path + '\hen_tie.ico')
+        
+        # Initialize HEN Object
+        self.HEN_stream_analysis = HEN()
+        
+        # Initialize tab system
+        self.tabControl = ttk.Notebook(master,
+                                  width = swidth,
+                                  height = sheight)
+        cp_tab = ttk.Frame(self.tabControl)
+        self.tabControl.add(cp_tab, text='HENOS Control Panel')
+        self.tabControl.pack(expand=1, fill='both')
+        self.HENOS_user_input = HENOS_stream_input(cp_tab, self.HEN_stream_analysis)
+        self.HENOS_run_analysis = HENOS_analysis_control(cp_tab, self.HEN_stream_analysis, self.tabControl)
+        cp_tab.grid_rowconfigure(0, weight=0)
+        cp_tab.grid_rowconfigure(1, weight=10)
+        cp_tab.grid_rowconfigure(2, weight=1)
+        self.HENOS_user_input.grid(column=0, row=0, rowspan=1, sticky='ew')
+        self.HENOS_user_input.HEN_stream_table.grid(column=0, row=1, rowspan=80, sticky="nw")
+        self.HENOS_run_analysis.grid(column=0, row=2, sticky="nsew")
+
+class HENOS_stream_input(ttk.Frame):
+    """
+    A class which holds the HEN stream user input. Slave of HENOS control panel.
+    """
+    def __init__(self, parent, HEN_stream_analysis):
+        
+        # Initialize Frame properties
+        ttk.Frame.__init__(self, parent, padding='0.25i')
+        
+        # Instantiate HEN_table object
+        self.HEN_stream_table = HENOS_table(parent)
+        
+        # Initialize stream input components
+        self.HEN_stream_labels = ['Stream Name', 'Inlet Temperature',
+                             'Outlet Temperature', 'Temperature Units',
+                             'Heat Capacity Rate', 'Heat Capacity Rate Units',
+                             'Heat Load', 'Heat Load Units']
+        self.input_entries = {}
+        
+        self.HEN_stream_analysis = HEN_stream_analysis
+        
+        # Arrange stream input components
+        for row in range(2):
+            for col in range(8):
+                if row == 0:
+                    l = ttk.Label(self, text=self.HEN_stream_labels[col])
+                    l.grid(row=row, column=col, padx=10)
+                else:
+                    if col in [0, 1, 2, 4, 6]:
+                        e = ttk.Entry(self, width=12)
+                        e.grid(row=row, column=col)
+                        self.input_entries[col] = e
+                    elif col == 3:
+                        m = create_dropdown_menu(self, ['°C', '°F', 'K'])
+                        m[0].grid(row = row, column=col)
+                        self.input_entries[col] = m[1]
+                    elif col == 5:
+                        m = create_dropdown_menu(self, ['J·kg/(K·s)', 'J·lb/(°F·s)'])
+                        m[0].grid(row = row, column=col)
+                        self.input_entries[col] = m[1]
+                    elif col == 7:
+                        m = create_dropdown_menu(self, ['J', 'kcal', 'BTU'])
+                        m[0].grid(row = row, column=col)
+                        self.input_entries[col] = m[1]
+        
+        # Initialize and arrange 'Add Stream' button
+        sub_stream = ttk.Button(self, text="Add Stream", command=self.add_stream)
+        sub_stream.grid(row=1, column=8, sticky='nsew')
+        
+    
+    def add_stream(self):
+        inputSV = []
+        for col in range(8):
+            inputSV.append(self.input_entries[col].get())
+        printed_stream_values = [inputSV[0], inputSV[1] + ' ' + inputSV[3],
+                                 inputSV[2] + ' ' + inputSV[3], inputSV[4] + ' ' + inputSV[5],
+                                 inputSV[6] + ' ' + inputSV[7]]
+
+        self.HEN_stream_table.receive_new_stream(printed_stream_values)
+        self.HEN_stream_table.update_stream_display()
+        
+        HEN.add_stream(self.HEN_stream_analysis, float(inputSV[1]), float(inputSV[2]), float(inputSV[4]), 
+                       stream_name=inputSV[0])
+        
+        self.HEN_stream_analysis_params = self.HEN_stream_analysis.get_parameters()
+        
+
+class HENOS_table(ttk.Frame):
+    '''
+    A class which holds the HEN stream table. Slave of HENOS control panel.
+    '''
+    def __init__(self, parent):
+        
+        ttk.Frame.__init__(self, parent, padding='0.25i')
+        
+        for col in range(6):
+            tl = ttk.Label(self, text=['Stream Name', 'Inlet Temperature',
+                                       'Outlet Temperature', 'Heat Capacity Rate',
+                                       'Heat Load', 'Activate/Deactivate'][col])
+            tl.grid(row = 0, column=col, padx=10)
+        
+        self.HEN_stream_list = []
+            
+    def receive_new_stream(self, input_stream_values):
+        stream_info = []
+        
+        for col in range(5):
+            stream_info.append(input_stream_values[col])
+            
+        self.HEN_stream_list.append(stream_info)
+    
+    def update_stream_display(self):
+        for stream_number in range(len(self.HEN_stream_list)):
+            for element_number in range(len(self.HEN_stream_list[stream_number])):
+                l = ttk.Label(self, text=self.HEN_stream_list[stream_number][element_number])
+                l.grid(row=stream_number+1, column=element_number, padx=10)
+        
+
+class HENOS_analysis_control(ttk.Frame):
+    '''
+    A class which holds the HEN analysis buttons. Slave of HENOS control panel.
+    '''
+    def __init__(self, parent, HEN_object, HENOS_tab_control):
+        
+        ttk.Frame.__init__(self, parent, padding='0.25i')
+        
+        self.parent_frame = parent
+        self.HEN_object = HEN_object
+        self.HENOS_tab_control = HENOS_tab_control
+        
+        tidButton = ttk.Button(self, text="Temperature Interval Diagram", command=self.generate_tid)
+        ccButton = ttk.Button(self, text="Composite Curve", command=self.generate_cc)
+        solutionButton = ttk.Button(self, text="Run HEN Solution Optimization")
+        
+        tidButton.grid(row=0, column=2, padx=10, sticky='s')
+        ccButton.grid(row=1, column=2, padx=10, sticky='s')
+        solutionButton.grid(row=1, column=0, padx=10, sticky='s')
+    def generate_cc(self):
+        self.HEN_object.make_cc(self.HENOS_tab_control)
+    def generate_tid(self):
+        self.HEN_object.make_tid(self.HENOS_tab_control)
+
+def create_dropdown_menu(master, options):
+    var = tk.StringVar(master)
+    menu = ttk.OptionMenu(master, var, options[0], *options)
+    return [menu, var]
+
+def generate_GUI_plot(plot, tabControl, tab_name):
+    """
+    A function which generates a relevant model plot onto the GUI
+    """
+    new_tab = ttk.Frame(tabControl)
+    tabControl.add(new_tab, text=tab_name)
+    tabControl.pack(expand=1, fill='both')
+    new_canvas = FigureCanvasTkAgg(plot, master=new_tab)
+    new_canvas.draw()
+
+    new_canvas.get_tk_widget().pack()
+
+#################################################################################################################
+# SECTION 2 - BACK END
 class HEN:
     """
     A class that holds streams and exchangers, used to solve HEN problems
@@ -114,7 +299,7 @@ class HEN:
             elif self.streams[elem].current_t_below is None:
                 self.streams[elem].current_t_below = self._plotted_ylines[self.first_utility_loc] * self.temp_unit
 
-    def make_tid(self, show_temperatures = True, show_properties = True): # Add a show_middle_temps, show_q parameter for customization
+    def make_tid(self, tab_control, show_temperatures = True, show_properties = True): # Add a show_middle_temps, show_q parameter for customization
         """
         This function plots a temperature-interval diagram using the streams and exchangers currently associated with this HEN object.
         self.get_parameters() must be called before this function.
@@ -185,8 +370,11 @@ class HEN:
         if show_temperatures:
             ax1.text(np.mean(ax1.get_xlim()), self._plotted_ylines[-2-self.first_utility_loc] - 1, 'Pinch Point', ha = 'center', va = 'top')
         plt.show(block = False)
+        
+        # Embed into GUI
+        generate_GUI_plot(fig1, tab_control, 'Temperature Interval Diagram')
 
-    def make_cc(self):
+    def make_cc(self, tab_control):
         plt.rcParams['axes.titlesize'] = 5
         plt.rcParams['axes.labelsize'] = 5
         plt.rcParams['font.size'] = 3
@@ -215,6 +403,8 @@ class HEN:
         ax2.text(overlap_text_loc, top_text_loc, overlap_text, ha = 'center', va = 'top')
 
         plt.show(block = False)
+        # Embed into GUI
+        generate_GUI_plot(fig2, tab_control, 'Composite Curve')
 
         """ TODO: remove whitespace around the graphs
         ax = gca;
@@ -318,8 +508,7 @@ class HEN:
 
     def load(self,file):
         return pickle.load(open(file, 'rb'))
-
-
+            
 
 class Stream():
     def __init__(self, t1, t2, cp, flow_rate, flow_unit, temp_unit, cp_unit):
@@ -359,3 +548,7 @@ class HeatExchanger():
         self.delta_T_lm = delta_T_lm
         self.area = self.heat / (self.U * self.delta_T_lm)
         self.exchanger_type = exchanger_type
+     
+## SECTION ? - RUN APPLICATION
+HEN_app = HENOS_control_panel(root)
+root.mainloop()
