@@ -338,14 +338,17 @@ class HEN:
         for idx in range(len(temperatures)):
             if temperatures[idx, 0] > temperatures[idx, 1]:
                 my_color = 'r'
+                my_marker = 'v'
                 tplot1 = temperatures[idx, 0]
                 tplot2 = temperatures[idx, 1]
             else:
                 my_color = 'b'
+                my_marker = '^'
                 tplot1 = temperatures[idx, 0] + self.delta_t.value
                 tplot2 = temperatures[idx, 1] + self.delta_t.value
 
             ax1.vlines(idx, tplot1, tplot2, color = my_color, linewidth = 0.25) # Vertical line for each stream
+            ax1.plot(idx, tplot2, color = my_color, marker = my_marker, markersize = 2) # Marker at the end of each vertical line
             if show_properties:
                 q_above_text = r'$Q_{Top}$ = %g %s' % (self.streams[x_tick_labels[idx]].q_above, self.streams[x_tick_labels[idx]].q_above.units)
                 ax1.text(idx, q_above_text_loc, q_above_text, ha = 'center', va = 'top') # Heat above the pinch point
@@ -358,8 +361,10 @@ class HEN:
         for elem in self._plotted_ylines:
             ax1.axhline(elem, color = 'k', linewidth = 0.25)
             if show_temperatures:
-                my_label = str(elem) + str(self.temp_unit) + ' Hot side, ' + str(elem - self.delta_t.value) + str(self.temp_unit) + ' Cold side'
-                ax1.text(np.mean(ax1.get_xlim()), elem, my_label, ha = 'center', va = 'bottom')
+                my_label1 = str(elem) + str(self.temp_unit) + '               ' # Extra spaces are used to pseudo-center the text
+                my_label2 = '               ' + str(elem - self.delta_t.value) + str(self.temp_unit)
+                ax1.text(np.mean(ax1.get_xlim()), elem, my_label1, ha = 'center', va = 'bottom', c = 'red')
+                ax1.text(np.mean(ax1.get_xlim()), elem, my_label2, ha = 'center', va = 'bottom', c = 'blue')
         
         # Labeling the x-axis with the stream names
         ax1.set_xticks(range(len(temperatures)))
