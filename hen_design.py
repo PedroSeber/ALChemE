@@ -86,7 +86,7 @@ class HENOS_stream_input(ttk.Frame):
                         m[0].grid(row = row, column=col)
                         self.input_entries[col] = m[1]
                     elif col == 5:
-                        m = create_dropdown_menu(self, ['J·kg/(K·s)', 'J·lb/(°F·s)'])
+                        m = create_dropdown_menu(self, ['J/(°C·s)', 'BTU/(°F·s)', 'J/(K·s)'])
                         m[0].grid(row = row, column=col)
                         self.input_entries[col] = m[1]
                     elif col == 7:
@@ -169,7 +169,7 @@ class HENOS_analysis_control(ttk.Frame):
     def generate_cc(self):
         self.HEN_object.make_cc(self.HENOS_tab_control)
     def generate_tid(self):
-        self.HEN_object.make_tid(self.HENOS_tab_control)
+        self.HEN_object.make_tid(tab_control = self.HENOS_tab_control)
 
 def create_dropdown_menu(master, options):
     var = tk.StringVar(master)
@@ -299,7 +299,7 @@ class HEN:
             elif self.streams[elem].current_t_below is None:
                 self.streams[elem].current_t_below = self._plotted_ylines[self.first_utility_loc] * self.temp_unit
 
-    def make_tid(self, tab_control, show_temperatures = True, show_properties = True): # Add a show_middle_temps, show_q parameter for customization
+    def make_tid(self, show_temperatures = True, show_properties = True, tab_control = None): # Add a show_middle_temps, show_q parameter for customization
         """
         This function plots a temperature-interval diagram using the streams and exchangers currently associated with this HEN object.
         self.get_parameters() must be called before this function.
@@ -370,10 +370,10 @@ class HEN:
         if show_temperatures:
             ax1.text(np.mean(ax1.get_xlim()), self._plotted_ylines[-2-self.first_utility_loc] - 1, 'Pinch Point', ha = 'center', va = 'top')
         plt.show(block = False)
-        # Embed into GUI
-        generate_GUI_plot(fig1, tab_control, 'Temperature Interval Diagram')
+        if tab_control: # Embed into GUI
+            generate_GUI_plot(fig1, tab_control, 'Temperature Interval Diagram')
 
-    def make_cc(self, tab_control):
+    def make_cc(self, tab_control = None):
         plt.rcParams['axes.titlesize'] = 5
         plt.rcParams['axes.labelsize'] = 5
         plt.rcParams['font.size'] = 3
@@ -402,8 +402,8 @@ class HEN:
         ax2.text(overlap_text_loc, top_text_loc, overlap_text, ha = 'center', va = 'top')
 
         plt.show(block = False)
-        # Embed into GUI
-        generate_GUI_plot(fig2, tab_control, 'Composite Curve')
+        if tab_control: # Embed into GUI
+            generate_GUI_plot(fig2, tab_control, 'Composite Curve')
 
         """ TODO: remove whitespace around the graphs
         ax = gca;
