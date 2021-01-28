@@ -524,10 +524,10 @@ class HEN:
     def save(self, name):
         file_name = name + ".p"
         pickle.dump(self, open( file_name, "wb" ))
-
-    def load(self,file):
+        
+    @classmethod
+    def load(cls,file):
         return pickle.load(open(file, 'rb'))
-            
 
 class Stream():
     def __init__(self, t1, t2, cp, flow_rate, flow_unit, temp_unit, cp_unit):
