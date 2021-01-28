@@ -370,7 +370,6 @@ class HEN:
         if show_temperatures:
             ax1.text(np.mean(ax1.get_xlim()), self._plotted_ylines[-2-self.first_utility_loc] - 1, 'Pinch Point', ha = 'center', va = 'top')
         plt.show(block = False)
-        
         # Embed into GUI
         generate_GUI_plot(fig1, tab_control, 'Temperature Interval Diagram')
 
@@ -427,10 +426,36 @@ class HEN:
             #for i in range(1, len(self._plotted_ylines+1)): # i is the number of intervals
                 #self._interval_heats_above[:, -i] + 
 
-    def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, t_in = None, t_out = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), exchanger_type = 'Fixed head'):
+    def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, t_in = None, t_out = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), 
+        exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0):
+
+        # General data validation
+        if exchanger_type.casefold() in {'fixed head', 'fixed', 'fixed-head'}:
+            exchanger_type = 'Fixed Head'
+        elif exchanger_type.casefold() in {'floating head', 'floating', 'floating-head'}:
+            exchanger_type = 'Floating Head'
+        elif exchanger_type.casefold() in {'u tube', 'u', 'u-tube'}:
+            exchanger_type = 'U-Tube'
+        elif exchanger_type.casefold() in {'kettle vaporizer', 'kettle', 'kettle-vaporizer'}:
+            exchanger_type = 'Kettle Vaporizer'
+        else:
+            raise ValueError(f'{exchanger_type} is an invalid type')
+        
+        if cost_a < 0:
+            raise ValueError('The cost_a parameter must be >= 0')
+        elif cost_b < 0:
+            raise ValueError('The cost_b parameter must be >= 0')
+        
+        if exchanger_name is None:
+            idx = 1
+            while f'E{idx}' in self.exchangers.keys():
+                idx +=1
+            exchanger_name = f'E{idx}'
+
+        # Exchanger calculations
         if pinch.casefold() == 'above' or pinch.casefold() == 'top' or pinch.casefold() == 'up':
             if t_in is not None and t_out is not None: # Operating the exchanger using temperatures
-                if ref_stream == 1:
+                if ref_stream == 1: # Temperature values must be referring to only one of the streams - the first stream in this case
                     heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
                 else:
                     heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
@@ -463,7 +488,7 @@ class HEN:
 
         elif pinch.casefold() == 'below' or pinch.casefold() == 'bottom' or pinch.casefold() == 'bot' or pinch.casefold == 'down':
             if t_in is not None and t_out is not None: # Operating the exchanger using temperatures
-                if ref_stream == 1:
+                if ref_stream == 1: # Temperature values must be referring to only one of the streams - the first stream in this case
                     heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
                 else:
                     heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
@@ -494,11 +519,7 @@ class HEN:
             self.streams[stream2].q_below_remaining = s2_q_below
             self.streams[stream2].current_t_below = s2_t_below
         
-        if exchanger_name is None:
-            idx = 1
-            while f'E{idx}' in self.exchangers.keys():
-                idx +=1
-            exchanger_name = f'E{idx}'
+        # Creating the exchanger object
         delta_T_lm = (delta_T1.value - delta_T2.value) / (np.log(delta_T1.value/delta_T2.value)) * self.delta_temp_unit
         self.exchangers[exchanger_name] = HeatExchanger(stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type)
         
@@ -548,6 +569,21 @@ class HeatExchanger():
         self.delta_T_lm = delta_T_lm
         self.area = self.heat / (self.U * self.delta_T_lm)
         self.exchanger_type = exchanger_type
+
+        if exchanger_type == 'Fixed Head':
+            self.cost_base = 0
+        elif exchanger_type == 'Floating Head':
+            self.cost_base = 0
+        elif exchanger_type == 'U-Tube':
+            self.cost_base = 0
+        elif exchanger_type == 'Kettle Vaporizer':
+            self.cost_base = 0
+
+    def __repr__(self):
+        text = (f'A {self.exchanger_type} heat exchanger exchanging {self.heat} between {self.stream1} and {self.stream2} {self.pinch} the pinch\n'
+            f'Has a U = {self.U:.4g}, area = {self.area:.4g}, and ΔT_lm = {self.delta_T_lm:.4g}\n'
+            f'Has a base cost of {self.cost_base} and a free on board cost of TBD\n')
+        return text
      
 ## SECTION ? - RUN APPLICATION
 HEN_app = HENOS_control_panel(root)
