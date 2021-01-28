@@ -474,9 +474,8 @@ class HEN:
             # Data validation
             if s1_t_above < s2_t_above:
                 raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_above}, while the cold stream is leaving with a temperature of {s2_t_above}')
-            else:
-                if s1_t_above - s2_t_above < self.delta_t:
-                    print(f"Warning: match violates minimum ΔT, which equals {self.delta_t}\nThis match's ΔT is {s1_t_above-s2_t_above}")
+            elif s1_t_above - s2_t_above < self.delta_t:
+                    print(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {s1_t_above-s2_t_above:.4g}")
             
             # Recording the data
             delta_T1 = self.streams[stream1].current_t_above - s2_t_above
@@ -507,9 +506,8 @@ class HEN:
             # Data validation
             if s1_t_below < s2_t_below:
                 raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_below}, while the cold stream is leaving with a temperature of {s2_t_below}')
-            else:
-                if s1_t_below - s2_t_below < self.delta_t:
-                    print(f"Warning: match violates minimum ΔT, which equals {self.delta_t}\nThis match's ΔT is {s1_t_below-s2_t_below}")
+            elif s1_t_below - s2_t_below < self.delta_t:
+                    print(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {s1_t_below-s2_t_below:.4g}")
             
             # Recording the data
             delta_T1 = self.streams[stream1].current_t_below - s2_t_below
@@ -555,8 +553,8 @@ class Stream():
         text =(f'{stream_type} stream with T_in = {self.t1} and T_out = {self.t2}\n'
             f'c_p = {self.cp} and flow rate = {self.flow_rate}\n')
         if self.q_above is not None:
-            text += f'Above pinch: {self.q_above} total, {self.q_above_remaining} remaining, T = {self.current_t_above}\n'
-            text += f'Below pinch: {self.q_below} total, {self.q_below_remaining} remaining, T = {self.current_t_below}\n'
+            text += f'Above pinch: {self.q_above} total, {self.q_above_remaining} remaining, T = {self.current_t_above:.4g}\n'
+            text += f'Below pinch: {self.q_below} total, {self.q_below_remaining} remaining, T = {self.current_t_below:.4g}\n'
         return text
 
 class HeatExchanger():
@@ -586,5 +584,6 @@ class HeatExchanger():
         return text
      
 ## SECTION ? - RUN APPLICATION
-HEN_app = HENOS_control_panel(root)
-root.mainloop()
+if __name__ == '__main__':
+    HEN_app = HENOS_control_panel(root)
+    root.mainloop()
