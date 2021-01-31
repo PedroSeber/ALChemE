@@ -1,5 +1,6 @@
 #################################################################################################################
 # SECTION 0 - IMPORT CALLS
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
@@ -190,6 +191,7 @@ def generate_GUI_plot(plot, tabControl, tab_name):
 
 #################################################################################################################
 # SECTION 2 - BACK END
+
 class HEN:
     """
     A class that holds streams and exchangers, used to solve HEN problems
@@ -284,7 +286,7 @@ class HEN:
         # Getting heats above / below pinch for each stream
         streams_in_interval = np.zeros((len(self.streams), len(delta_plotted_ylines)), dtype = np.int8)
         streams_in_interval[self.hot_streams, :] = streams_in_interval1
-        streams_in_interval[~self.hot_streams, :] = -1*streams_in_interval2
+        streams_in_interval[~self.hot_streams, :] = -1*streams_in_interval2 # TODO: remove this -1 and operate all heats as >0. Will need to change the exchanger function as well
         self._interval_heats = streams_in_interval * cp_vals * delta_plotted_ylines
         q_above = np.sum(self._interval_heats[:, -1-self.first_utility_loc:], axis = 1)
         q_below = np.sum(self._interval_heats[:, :-1-self.first_utility_loc], axis = 1)
@@ -347,7 +349,7 @@ class HEN:
                 tplot2 = temperatures[idx, 1] + self.delta_t.value
 
             ax1.vlines(idx, tplot1, tplot2, color = my_color, linewidth = 0.25) # Vertical line for each stream
-            ax1.plot(idx, tplot2, color = my_color, marker = my_marker, markersize = 2) # Marker at the end of each vertical line
+            ax1.plot(idx, tplot2, color = my_color, marker = my_marker, markersize = 1) # Marker at the end of each vertical line
             if show_properties:
                 q_above_text = r'$Q_{Top}$ = %g %s' % (self.streams[x_tick_labels[idx]].q_above, self.streams[x_tick_labels[idx]].q_above.units)
                 ax1.text(idx, q_above_text_loc, q_above_text, ha = 'center', va = 'top') # Heat above the pinch point
@@ -370,9 +372,11 @@ class HEN:
         ax1.set_xticklabels(x_tick_labels)
 
         # Adding the pinch point
-        ax1.axhline(self._plotted_ylines[-2-self.first_utility_loc], color = 'k', linewidth = 0.5) # Arrays start at 0 but end at -1, so we need an extra -1 in this line and the next
-        if show_temperatures:
-            ax1.text(np.mean(ax1.get_xlim()), self._plotted_ylines[-2-self.first_utility_loc] - 1, 'Pinch Point', ha = 'center', va = 'top')
+        if self.first_utility_loc + 2 <= len(self._plotted_ylines):
+            ax1.axhline(self._plotted_ylines[-2-self.first_utility_loc], color = 'k', linewidth = 0.5) # Arrays start at 0 but end at -1, so we need an extra -1 in this line and the next
+            if show_temperatures:
+                ax1.text(np.mean(ax1.get_xlim()), self._plotted_ylines[-2-self.first_utility_loc] - 1, 'Pinch Point', ha = 'center', va = 'top')
+        
         plt.show(block = False)
         if tab_control: # Embed into GUI
             generate_GUI_plot(fig1, tab_control, 'Temperature Interval Diagram')
@@ -415,14 +419,14 @@ class HEN:
         ax.Position = [ti(1), ti(2), 1 - ti(1) - ti(3), 1 - ti(2) - ti(4)]; % Removing whitespace from the graph
         """
 
-    def place_exchangers(self):
+    def place_exchangers(self, upper = None):
         """
         Notes to self (WIP):
         Equations come from C.A. Floudas, "Nonlinear and Mixed-Integer Optimization", p. 283
 
         self._interval_heats has each stream as its rows and each interval as its columns, such that the topmost interval is the rightmost column
 
-        First N rows of residuals are the N hot utilities; last M rows are the M cold utilities
+        First N rows of residuals are the N hot utilities
         First N rows of Q_exchanger are the N hot utilities; first M columns are the M cold utilities
         """
 
@@ -433,26 +437,24 @@ class HEN:
         def _objective(self, residuals = None, Q_exchanger_above = None):
             # Starting up
             if residuals is None:
-                residuals = np.zeros( (np.sum(self.hot_streams) + self.hot_utilities + self.cold_utilities, self._interval_heats.shape[-1] + 2) ) # Extra intervals are the heat coming in from "above the highest interval" or "below the lowest interval" (always 0)
+                # The extra interval represents the heats coming in from "above the highest interval" (always 0)
+                residuals = np.zeros( (np.sum(self.hot_streams) + self.hot_utilities, self._interval_heats.shape[-1] + 1) )
             if Q_exchanger is None:
+                #Q_exchanger is how much heat each exchanger will transfer. It's multiplied (in the eqns below) by another array to remove matches where there are no streams
                 Q_exchanger = np.zeros((np.sum(self.hot_streams) + self.hot_utilities, np.sum(~self.hot_streams) + self.cold_utilities, self._interval_heats.shape[-1] )) # Hot streams, cold streams, and intervals
 
-        #Q_exchanger is how much heat each exchanger will transfer. It's multiplied by another array to remove matches where there are no streams
-        if self.cold_utilities:
-            # The eqnX: things are just for readability, and will be removed from the code before the final version
-            # eqn1: may not need the concatenate, since it's only i in HP_k, and the concatenate is inserting HU_k
-            eqn1: residuals[self.hot_utilities:-self.cold_utilities, :-1] - residuals[self.hot_utilities:-self.cold_utilities, 1:] + np.sum(Q_exchanger[self.hot_utilities:, :, :], axis = 1)*np.array(np.concatenate((np.ones((self.hot_utilities, self._interval_heats.shape[-1])), self._interval_heats[self.hot_streams] )), dtype = bool) = self._interval_heats[self.hot_streams]
-            eqn2: residuals[:self.hot_utilities, :-1] - residuals[:self.hot_utilities, 1:] + np.sum(Q_exchanger[:self.hot_utilities, self.cold_utilities:, :], axis = 1)*np.ones((self.hot_utilities, self._interval_heats.shape[-1]), dtype = bool) = float(self.first_utility)
-            eqn3: np.sum(Q_exchanger[:, :-self.cold_utilities, :], axis = 0)*np.array(np.concatenate((np.ones((self.hot_utilities, self._interval_heats.shape[-1])), self._interval_heats[self.hot_streams])) ), dtype = bool) = self._interval_heats[~self.hot_streams]
+        # The eqnX: things are just for readability, and will be removed from the code before the final version
+        eqn1: residuals[self.hot_utilities:, :-1] - residuals[self.hot_utilities:, 1:] + np.sum(Q_exchanger[self.hot_utilities:, :, :], axis = 1)*np.array(self._interval_heats[self.hot_streams], dtype = bool) = self._interval_heats[self.hot_streams]
+        eqn2: residuals[:self.hot_utilities, :-1] - residuals[:self.hot_utilities, 1:] + np.sum(Q_exchanger[:self.hot_utilities, self.cold_utilities:, :], axis = 1)*np.ones((self.hot_utilities, self._interval_heats.shape[-1]), dtype = bool) = np.ones((self.hot_utilities, self._interval_heats.shape[-1]))*self.first_utility.value
+        eqn3: np.sum(Q_exchanger[:, self.cold_utilities:, :], axis = 0)*np.array(self._interval_heats[~self.hot_streams] , dtype = bool) = self._interval_heats[~self.hot_streams]
+        eqn4: np.sum(Q_exchanger[self.hot_utilities:, :self.cold_utilities, :], axis = 0)*np.ones((self.cold_utilities, self._interval_heats.shape[-1]), dtype = bool) =  np.ones((self.cold_utilities, self._interval_heats.shape[-1]))*self.last_utility.value
+        eqn6: Q_exc_tot = np.sum(Q_exchanger, axis = 2)
 
-        else:
-            # I have yet to update the *np.array part of these eqns
-            eqn1: residuals[self.hot_utilities:, :-1] - residuals[self.hot_utilities:, 1:] + np.sum(Q_exchanger[self.hot_utilities:, :, :], axis = 1)*np.array(np.concatenate((self._interval_heats[~self.hot_streams], np.ones((self.cold_utilities, self._interval_heats.shape[-1])) )), dtype = bool) = self._interval_heats[self.hot_streams]
-            eqn2: residuals[:self.hot_utilities, :-1] - residuals[:self.hot_utilities, 1:] + np.sum(Q_exchanger[self.hot_utilities:, :, :], axis = 1)*np.array(self._interval_heats[~self.hot_streams]), dtype = bool) = float(self.first_utility)
-            eqn3: np.sum(Q_exchanger, axis = 0)*np.array(np.concatenate((np.ones((self.hot_utilities, self._interval_heats.shape[-1])), self._interval_heats[self.hot_streams])) ), dtype = bool) = self._interval_heats[~self.hot_streams]
-        eqn4: np.sum(Q_exchanger, axis = 0)*np.array(self._interval_heats[self.hot_streams], dtype = bool) = float(self.last_utility)
-        #for i in range(1, len(self._plotted_ylines+1)): # i is the number of intervals
-            #self._interval_heats_above[:, -i] + 
+        # Setting the upper heat exchanged limit for each pair of streams
+        if upper is None:
+            # Hot streams and cold utilities
+            pass
+        
 
     def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, t_in = None, t_out = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), 
         exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0):
