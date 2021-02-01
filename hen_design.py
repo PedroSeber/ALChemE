@@ -440,7 +440,7 @@ class HEN:
                 # The extra interval represents the heats coming in from "above the highest interval" (always 0)
                 residuals = np.zeros( (np.sum(self.hot_streams) + self.hot_utilities, self._interval_heats.shape[-1] + 1) )
             if Q_exchanger is None:
-                #Q_exchanger is how much heat each exchanger will transfer. It's multiplied (in the eqns below) by another array to remove matches where there are no streams
+                # Q_exchanger is how much heat each exchanger will transfer. It's multiplied (in the eqns below) by another array to remove matches where there are no streams
                 Q_exchanger = np.zeros((np.sum(self.hot_streams) + self.hot_utilities, np.sum(~self.hot_streams) + self.cold_utilities, self._interval_heats.shape[-1] )) # Hot streams, cold streams, and intervals
 
         # The eqnX: things are just for readability, and will be removed from the code before the final version
@@ -457,7 +457,7 @@ class HEN:
         
 
     def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, t_in = None, t_out = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), 
-        exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0):
+        exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0, pressure_unit = unyt.Pa):
 
         # General data validation
         if exchanger_type.casefold() in {'fixed head', 'fixed', 'fixed-head'}:
@@ -484,26 +484,45 @@ class HEN:
 
         # Exchanger calculations
         if pinch.casefold() == 'above' or pinch.casefold() == 'top' or pinch.casefold() == 'up':
+            if self.streams[stream1].q_above_remaining < 0: # We want Stream1 to be the hot stream, but it's currently the cold stream
+                stream1, stream2 = stream2, stream1
+                if ref_stream == 1: # Inverting the ref_stream parameter since we inverted the streams
+                    ref_stream = 2
+                else:
+                    ref_stream = 1
+            
             if t_in is not None and t_out is not None: # Operating the exchanger using temperatures
                 if ref_stream == 1: # Temperature values must be referring to only one of the streams - the first stream in this case
                     heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
                 else:
                     heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
             elif type(heat) is str and heat.casefold() == 'auto':
-                heat = np.minimum(np.abs(self.streams[stream1].q_above_remaining), np.abs(self.streams[stream2].q_above_remaining)) # Maximum heat exchanged is the minimum total heat between streams
+                if self.streams[stream1].cp * self.streams[stream1].flow_rate >= self.streams[stream2].cp * self.streams[stream2].flow_rate:
+                    heat = np.minimum(self.streams[stream1].q_above_remaining, np.abs(self.streams[stream2].q_above_remaining)) # Maximum heat exchanged is the minimum total heat between streams
+                else: # Can't use all the heat as the hot stream has a lower F*c_P, leading to a ΔT conflict
+                    # Finding a temporary temperature where the heats exchanged are equal, but still respecting ΔT
+                    T_F = (self.streams[stream1].cp * self.streams[stream1].flow_rate * self.streams[stream1].current_t_above.value * self.delta_temp_unit +
+                    self.streams[stream2].cp * self.streams[stream2].flow_rate * (self.delta_t.value + self.streams[stream2].current_t_above.value) * self.delta_temp_unit )
+                    T_F /= self.streams[stream1].cp * self.streams[stream1].flow_rate + self.streams[stream2].cp * self.streams[stream2].flow_rate
+                    heat_temp = self.streams[stream1].cp * self.streams[stream1].flow_rate * (self.streams[stream1].current_t_above.value*self.delta_temp_unit - T_F)
+                    # The heat_temp value can be greater than the minimum total heat of one of the streams, so we must take this into account
+                    heat = np.minimum(self.streams[stream1].q_above_remaining, np.abs(self.streams[stream2].q_above_remaining))
+                    heat = np.minimum(heat, heat_temp)
             else: # Heat passed was a number, and no temperatures were passed
                 heat = heat * self.streams[stream1].q_above.units
 
-            if self.streams[stream1].q_above_remaining < 0: # We want Stream1 to be the hot stream, but it's currently the cold stream
-                stream1, stream2 = stream2, stream1
             s1_q_above = self.streams[stream1].q_above_remaining - heat
             s1_t_above = self.streams[stream1].current_t_above - heat/(self.streams[stream1].cp * self.streams[stream1].flow_rate)
             s2_q_above = self.streams[stream2].q_above_remaining + heat
             s2_t_above = self.streams[stream2].current_t_above + heat/(self.streams[stream2].cp * self.streams[stream2].flow_rate)
             
             # Data validation
-            if s1_t_above < s2_t_above:
-                raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_above}, while the cold stream is leaving with a temperature of {s2_t_above}')
+            if self.streams[stream1].current_t_above < s2_t_above:
+                raise ValueError(f'Match is thermodynamically impossible, as the hot stream is entering with a temperature of {self.streams[stream1].current_t_above:.4g}, '
+                    f'while the cold stream is leaving with a temperature of {s2_t_above:.4g}')
+            elif s1_t_above < self.streams[stream2].current_t_above:
+                raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_above:.4g}, '
+                    f'while the cold stream is entering with a temperature of {self.streams[stream2].current_t_above:.4g}')
             elif s1_t_above - s2_t_above < self.delta_t:
                     print(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {s1_t_above-s2_t_above:.4g}")
             
@@ -516,26 +535,45 @@ class HEN:
             self.streams[stream2].current_t_above = s2_t_above
 
         elif pinch.casefold() == 'below' or pinch.casefold() == 'bottom' or pinch.casefold() == 'bot' or pinch.casefold == 'down':
+            if self.streams[stream1].q_below_remaining < 0: # We want Stream1 to be the hot stream, but it's currently the cold stream
+                stream1, stream2 = stream2, stream1
+                if ref_stream == 1: # Inverting the ref_stream parameter since we inverted the streams
+                    ref_stream = 2
+                else:
+                    ref_stream = 1
+
             if t_in is not None and t_out is not None: # Operating the exchanger using temperatures
                 if ref_stream == 1: # Temperature values must be referring to only one of the streams - the first stream in this case
                     heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
                 else:
                     heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
             elif type(heat) is str and heat.casefold() == 'auto':
-                heat = np.minimum(np.abs(self.streams[stream1].q_below_remaining), np.abs(self.streams[stream2].q_below_remaining)) # Maximum heat exchanged is the minimum total heat between streams
+                if self.streams[stream1].cp * self.streams[stream1].flow_rate <= self.streams[stream2].cp * self.streams[stream2].flow_rate:
+                    heat = np.minimum(np.abs(self.streams[stream1].q_below_remaining), np.abs(self.streams[stream2].q_below_remaining)) # Maximum heat exchanged is the minimum total heat between streams
+                else: # Can't use all the heat as the hot stream has a lower F*c_P, leading to a ΔT conflict
+                    # Finding a temporary temperature where the heats exchanged are equal, but still respecting ΔT
+                    T_F = (self.streams[stream1].cp * self.streams[stream1].flow_rate * self.streams[stream1].current_t_below.value * self.delta_temp_unit +
+                    self.streams[stream2].cp * self.streams[stream2].flow_rate * (self.delta_t.value + self.streams[stream2].current_t_below.value) * self.delta_temp_unit )
+                    T_F /= self.streams[stream1].cp * self.streams[stream1].flow_rate + self.streams[stream2].cp * self.streams[stream2].flow_rate
+                    heat_temp = self.streams[stream1].cp * self.streams[stream1].flow_rate * (self.streams[stream1].current_t_below.value*self.delta_temp_unit - T_F)
+                    # The heat_temp value can be greater than the minimum total heat of one of the streams, so we must take this into account
+                    heat = np.minimum(self.streams[stream1].q_below_remaining, np.abs(self.streams[stream2].q_below_remaining))
+                    heat = np.minimum(heat, heat_temp)
             else: # Heat passed was a number, and no temperatures were passed
                 heat = heat * self.streams[stream1].q_above.units
             
-            if self.streams[stream1].q_below_remaining < 0: # We want Stream1 to be the hot stream, but it's currently the cold stream
-                stream1, stream2 = stream2, stream1
             s1_q_below = self.streams[stream1].q_below_remaining - heat
             s1_t_below = self.streams[stream1].current_t_below - heat/(self.streams[stream1].cp * self.streams[stream1].flow_rate)
             s2_q_below = self.streams[stream2].q_below_remaining + heat
             s2_t_below = self.streams[stream2].current_t_below + heat/(self.streams[stream2].cp * self.streams[stream2].flow_rate)
             
             # Data validation
-            if s1_t_below < s2_t_below:
-                raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_below}, while the cold stream is leaving with a temperature of {s2_t_below}')
+            if self.streams[stream1].current_t_below < s2_t_below:
+                raise ValueError(f'Match is thermodynamically impossible, as the hot stream is entering with a temperature of {self.streams[stream1].current_t_below:.4g}, '
+                    f'while the cold stream is leaving with a temperature of {s2_t_below:.4g}')
+            elif s1_t_below < self.streams[stream2].current_t_below:
+                raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_below:.4g}, '
+                    f'while the cold stream is entering with a temperature of {self.streams[stream2].current_t_below:.4g}')
             elif s1_t_below - s2_t_below < self.delta_t:
                     print(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {s1_t_below-s2_t_below:.4g}")
             
@@ -549,7 +587,8 @@ class HEN:
         
         # Creating the exchanger object
         delta_T_lm = (delta_T1.value - delta_T2.value) / (np.log(delta_T1.value/delta_T2.value)) * self.delta_temp_unit
-        self.exchangers[exchanger_name] = HeatExchanger(stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type)
+        pressure = pressure * pressure_unit
+        self.exchangers[exchanger_name] = HeatExchanger(stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type, cost_a, cost_b, pressure)
         
     def save(self, name):
         file_name = name + ".p"
@@ -583,12 +622,12 @@ class Stream():
         text =(f'{stream_type} stream with T_in = {self.t1} and T_out = {self.t2}\n'
             f'c_p = {self.cp} and flow rate = {self.flow_rate}\n')
         if self.q_above is not None:
-            text += f'Above pinch: {self.q_above} total, {self.q_above_remaining} remaining, T = {self.current_t_above:.4g}\n'
-            text += f'Below pinch: {self.q_below} total, {self.q_below_remaining} remaining, T = {self.current_t_below:.4g}\n'
+            text += f'Above pinch: {self.q_above} total, {self.q_above_remaining:.6g} remaining, T = {self.current_t_above:.4g}\n'
+            text += f'Below pinch: {self.q_below} total, {self.q_below_remaining:.6g} remaining, T = {self.current_t_below:.4g}\n'
         return text
 
 class HeatExchanger():
-    def __init__(self, stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type):
+    def __init__(self, stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type, cost_a, cost_b, pressure):
         self.stream1 = stream1
         self.stream2 = stream2
         self.heat = heat
@@ -597,20 +636,30 @@ class HeatExchanger():
         self.delta_T_lm = delta_T_lm
         self.area = self.heat / (self.U * self.delta_T_lm)
         self.exchanger_type = exchanger_type
+        self.pressure = pressure
 
-        if exchanger_type == 'Fixed Head':
-            self.cost_base = 0
-        elif exchanger_type == 'Floating Head':
-            self.cost_base = 0
+        # Calculating costs
+        Ac = self.area.to('ft**2').value
+        pressure_c = self.pressure.to('psi').value
+        if exchanger_type == 'Floating Head':
+            self.cost_base = np.exp(12.0310) * Ac**(-0.8709) * np.exp(0.09005*np.log(Ac)**2)
+        elif exchanger_type == 'Fixed Head':
+            self.cost_base = np.exp(11.4185) * Ac**(-0.9228) * np.exp(0.09861*np.log(Ac)**2)
         elif exchanger_type == 'U-Tube':
-            self.cost_base = 0
+            self.cost_base = np.exp(11.5510) * Ac**(-0.9186) * np.exp(0.09790*np.log(Ac)**2)
         elif exchanger_type == 'Kettle Vaporizer':
-            self.cost_base = 0
+            self.cost_base = np.exp(12.3310) * Ac**(-0.8709) * np.exp(0.09005*np.log(Ac)**2)
+        Fm = cost_a + (Ac/100)**cost_b
+        if pressure_c > 100:
+            Fp = 0.9803 + 0.018*pressure_c/100 + 0.0017*(pressure_c/100)**2
+        else:
+            Fp = 1
+        self.cost_fob = self.cost_base * Fm * Fp
 
     def __repr__(self):
-        text = (f'A {self.exchanger_type} heat exchanger exchanging {self.heat} between {self.stream1} and {self.stream2} {self.pinch} the pinch\n'
+        text = (f'A {self.exchanger_type} heat exchanger exchanging {self.heat:.6g} between {self.stream1} and {self.stream2} {self.pinch} the pinch\n'
             f'Has a U = {self.U:.4g}, area = {self.area:.4g}, and ΔT_lm = {self.delta_T_lm:.4g}\n'
-            f'Has a base cost of {self.cost_base} and a free on board cost of TBD\n')
+            f'Has a base cost of ${self.cost_base:,.2f} and a free on board cost of ${self.cost_fob:,.2f}\n')
         return text
      
 ## SECTION ? - RUN APPLICATION
