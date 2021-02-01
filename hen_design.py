@@ -11,6 +11,7 @@ import tkinter as tk
 from tkinter import ttk
 import os
 import pickle
+import warnings
 
 #################################################################################################################
 # SECTION 1 - FRONT END
@@ -213,14 +214,45 @@ class HEN:
             self.delta_temp_unit = unyt.delta_degF
         else:
             self.delta_temp_unit = temp_unit
+
+        self.heat_unit = self.flow_unit * self.cp_unit * self.delta_temp_unit
     
-    def add_stream(self, t1, t2, cp, flow_rate = 1, stream_name = None, temp_unit = None, cp_unit = None, flow_unit = None):
-        if flow_unit is None:
-            flow_unit = self.flow_unit
+    def add_stream(self, t1, t2, cp = None, flow_rate = 1, heat = None, stream_name = None, temp_unit = None, cp_unit = None, flow_unit = None, heat_unit = None):
+        if cp is None and heat is None:
+            raise ValueError('One of cp or heat must be passed')
+        elif cp is not None and heat is not None:
+            warnings.warn('You have passed both a cp and a heat. The heat input will be ignored')
+
+        # Converting to default units (as declared via the HEN class)        
         if temp_unit is None:
-            temp_unit = self.temp_unit
-        if cp_unit is None:
-            cp_unit = self.cp_unit
+            t1 *= self.temp_unit
+            t2 *= self.temp_unit
+        else:
+            t1 *= temp_unit
+            t1 = t1.to(self.temp_unit)
+            t2 *= temp_unit
+            t2 = t2.to(self.temp_unit)
+        
+        if flow_unit is None:
+            flow_rate *= self.flow_unit
+        else:
+            flow_rate *= flow_unit
+            flow_rate = flow_rate.to(self.flow_unit)
+        
+        if cp: # cp was passed; ignoring any value passed in the heat parameter
+            if cp_unit is None:
+                cp *= self.cp_unit
+            else:
+                cp *= cp_unit
+                cp = cp.to(self.cp_unit)
+        else: # Heat was passed
+            if heat_unit is None:
+                heat *= self.heat_unit
+            else:
+                heat *= heat_unit
+                heat = heat.to(self.heat_unit)
+            cp = heat / (np.abs(t2.value - t1.value)*self.delta_temp_unit)
+        
         if stream_name is None:
             if t1 > t2: # Hot stream
                 letter = 'H'
@@ -231,7 +263,7 @@ class HEN:
                 idx += 1
             stream_name = f'{letter}{idx}'
 
-        self.streams[stream_name] = Stream(t1, t2, cp, flow_rate, flow_unit, temp_unit, cp_unit)
+        self.streams[stream_name] = Stream(t1, t2, cp, flow_rate)
 
     def get_parameters(self):
         """
@@ -599,11 +631,11 @@ class HEN:
         return pickle.load(open(file, 'rb'))
 
 class Stream():
-    def __init__(self, t1, t2, cp, flow_rate, flow_unit, temp_unit, cp_unit):
-        self.t1 = t1 * temp_unit
-        self.t2 = t2 * temp_unit
-        self.cp = cp * cp_unit
-        self.flow_rate = flow_rate * flow_unit
+    def __init__(self, t1, t2, cp, flow_rate):
+        self.t1 = t1
+        self.t2 = t2
+        self.cp = cp
+        self.flow_rate = flow_rate
         self.q_above = None # Will be updated once pinch point is found
         self.q_below = None
 
