@@ -622,12 +622,32 @@ class HEN:
         pressure = pressure * pressure_unit
         self.exchangers[exchanger_name] = HeatExchanger(stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type, cost_a, cost_b, pressure)
         
-    def save(self, name):
-        file_name = name + ".p"
+    def save(self, name, overwrite = False):
+        if "." in name:
+            file_name = name
+        else:
+            file_name = name + ".p"
+
+        if not overwrite and os.path.exists(file_name):
+            word = file_name.split('.')
+            file_name = word[0] + "DUPLICATE." +  word[1]
+            print("The File Name you chose already exists in this directory. Saving as " + file_name + " instead")
+
         pickle.dump(self, open( file_name, "wb" ))
         
     @classmethod
-    def load(cls,file):
+    def load(cls,file = None):
+        if file == None:
+            files = os.listdir()
+            file_list = []
+            for myfile in files:
+                if myfile.endswith('.p'):
+                    file_list.append(myfile)
+            if len(file_list) != 1:
+                raise ValueError('You must supply a file name (with extension) to HEN.load()'+
+            '\n Alternatively, ensure there\'s only one .p file in the working directory')
+            else:
+                file = file_list[0]
         return pickle.load(open(file, 'rb'))
 
 class Stream():
