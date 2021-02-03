@@ -628,9 +628,10 @@ class HEN:
         else:
             file_name = name + ".p"
 
-        if not overwrite and os.path.exists(file_name):
-            word = file_name.split('.')
-            file_name = word[0] + "DUPLICATE." +  word[1]
+        if not overwrite:
+            while os.path.exists(file_name):
+                word = file_name.split('.')
+                file_name = word[0] + "DUPLICATE." +  word[1]
             print("The File Name you chose already exists in this directory. Saving as " + file_name + " instead")
 
         pickle.dump(self, open( file_name, "wb" ))
