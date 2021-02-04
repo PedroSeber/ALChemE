@@ -309,16 +309,16 @@ class HEN:
             self.first_utility_loc = len(q_sum)
             print('Warning: there is no pinch point nor a first utility\n')
         
-        self.last_utility = -q_sum[-1] * self.flow_unit*self.delta_temp_unit*self.cp_unit
+        self.last_utility = q_sum[-1] * self.flow_unit*self.delta_temp_unit*self.cp_unit
         self.enthalpy_hot = np.insert(enthalpy_hot, 0, 0) # The first value in enthalpy_hot is defined as 0
         # Shifting the cold enthalpy so that the first value starts at positive last_utility
-        self.enthalpy_cold = np.insert(enthalpy_cold[:-1], 0, -self.last_utility)
+        self.enthalpy_cold = np.insert(enthalpy_cold[:-1], 0, self.last_utility)
         print('The last utility is %g %s\n' % (self.last_utility, self.last_utility.units))
 
         # Getting heats above / below pinch for each stream
         streams_in_interval = np.zeros((len(self.streams), len(delta_plotted_ylines)), dtype = np.int8)
         streams_in_interval[self.hot_streams, :] = streams_in_interval1
-        streams_in_interval[~self.hot_streams, :] = -1*streams_in_interval2 # TODO: remove this -1 and operate all heats as >0. Will need to change the exchanger function as well
+        streams_in_interval[~self.hot_streams, :] = streams_in_interval2 # TODO: remove this -1 and operate all heats as >0. Will need to change the exchanger function as well
         self._interval_heats = streams_in_interval * cp_vals * delta_plotted_ylines
         q_above = np.sum(self._interval_heats[:, -1-self.first_utility_loc:], axis = 1)
         q_below = np.sum(self._interval_heats[:, :-1-self.first_utility_loc], axis = 1)
@@ -367,7 +367,6 @@ class HEN:
         
         
         # Manipulating the temperatures so that the hot and cold values are on the same y-position, even though they're shifted by delta_t
-        plotted_ylines = np.empty(temperatures.size, dtype = 'object')
         for idx in range(len(temperatures)):
             if temperatures[idx, 0] > temperatures[idx, 1]:
                 my_color = 'r'
@@ -516,7 +515,7 @@ class HEN:
 
         # Exchanger calculations
         if pinch.casefold() == 'above' or pinch.casefold() == 'top' or pinch.casefold() == 'up':
-            if self.streams[stream1].q_above_remaining < 0: # We want Stream1 to be the hot stream, but it's currently the cold stream
+            if self.streams[stream1].t1 < self.streams[stream1].t2: # We want Stream1 to be the hot stream, but it's currently the cold stream
                 stream1, stream2 = stream2, stream1
                 if ref_stream == 1: # Inverting the ref_stream parameter since we inverted the streams
                     ref_stream = 2
@@ -525,12 +524,12 @@ class HEN:
             
             if t_in is not None and t_out is not None: # Operating the exchanger using temperatures
                 if ref_stream == 1: # Temperature values must be referring to only one of the streams - the first stream in this case
-                    heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
+                    heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * (np.abs(t_in - t_out)*self.delta_temp_unit)
                 else:
-                    heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
+                    heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * (np.abs(t_in - t_out)*self.delta_temp_unit)
             elif type(heat) is str and heat.casefold() == 'auto':
                 if self.streams[stream1].cp * self.streams[stream1].flow_rate >= self.streams[stream2].cp * self.streams[stream2].flow_rate:
-                    heat = np.minimum(self.streams[stream1].q_above_remaining, np.abs(self.streams[stream2].q_above_remaining)) # Maximum heat exchanged is the minimum total heat between streams
+                    heat = np.minimum(self.streams[stream1].q_above_remaining, self.streams[stream2].q_above_remaining) # Maximum heat exchanged is the minimum total heat between streams
                 else: # Can't use all the heat as the hot stream has a lower F*c_P, leading to a ΔT conflict
                     # Finding a temporary temperature where the heats exchanged are equal, but still respecting ΔT
                     T_F = (self.streams[stream1].cp * self.streams[stream1].flow_rate * self.streams[stream1].current_t_above.value * self.delta_temp_unit +
@@ -538,14 +537,14 @@ class HEN:
                     T_F /= self.streams[stream1].cp * self.streams[stream1].flow_rate + self.streams[stream2].cp * self.streams[stream2].flow_rate
                     heat_temp = self.streams[stream1].cp * self.streams[stream1].flow_rate * (self.streams[stream1].current_t_above.value*self.delta_temp_unit - T_F)
                     # The heat_temp value can be greater than the minimum total heat of one of the streams, so we must take this into account
-                    heat = np.minimum(self.streams[stream1].q_above_remaining, np.abs(self.streams[stream2].q_above_remaining))
+                    heat = np.minimum(self.streams[stream1].q_above_remaining, self.streams[stream2].q_above_remaining)
                     heat = np.minimum(heat, heat_temp)
             else: # Heat passed was a number, and no temperatures were passed
                 heat = heat * self.streams[stream1].q_above.units
 
             s1_q_above = self.streams[stream1].q_above_remaining - heat
             s1_t_above = self.streams[stream1].current_t_above - heat/(self.streams[stream1].cp * self.streams[stream1].flow_rate)
-            s2_q_above = self.streams[stream2].q_above_remaining + heat
+            s2_q_above = self.streams[stream2].q_above_remaining - heat
             s2_t_above = self.streams[stream2].current_t_above + heat/(self.streams[stream2].cp * self.streams[stream2].flow_rate)
             
             # Data validation
@@ -556,7 +555,7 @@ class HEN:
                 raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_above:.4g}, '
                     f'while the cold stream is entering with a temperature of {self.streams[stream2].current_t_above:.4g}')
             elif s1_t_above - s2_t_above < self.delta_t:
-                    print(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {s1_t_above-s2_t_above:.4g}")
+                    warnings.warn(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {s1_t_above-s2_t_above:.4g}")
             
             # Recording the data
             delta_T1 = self.streams[stream1].current_t_above - s2_t_above
@@ -567,7 +566,7 @@ class HEN:
             self.streams[stream2].current_t_above = s2_t_above
 
         elif pinch.casefold() == 'below' or pinch.casefold() == 'bottom' or pinch.casefold() == 'bot' or pinch.casefold == 'down':
-            if self.streams[stream1].q_below_remaining < 0: # We want Stream1 to be the hot stream, but it's currently the cold stream
+            if self.streams[stream1].t1 < self.streams[stream1].t2: # We want Stream1 to be the hot stream, but it's currently the cold stream
                 stream1, stream2 = stream2, stream1
                 if ref_stream == 1: # Inverting the ref_stream parameter since we inverted the streams
                     ref_stream = 2
@@ -576,12 +575,12 @@ class HEN:
 
             if t_in is not None and t_out is not None: # Operating the exchanger using temperatures
                 if ref_stream == 1: # Temperature values must be referring to only one of the streams - the first stream in this case
-                    heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
+                    heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * (np.abs(t_in - t_out)*self.delta_temp_unit)
                 else:
-                    heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
+                    heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * (np.abs(t_in - t_out)*self.delta_temp_unit)
             elif type(heat) is str and heat.casefold() == 'auto':
                 if self.streams[stream1].cp * self.streams[stream1].flow_rate <= self.streams[stream2].cp * self.streams[stream2].flow_rate:
-                    heat = np.minimum(np.abs(self.streams[stream1].q_below_remaining), np.abs(self.streams[stream2].q_below_remaining)) # Maximum heat exchanged is the minimum total heat between streams
+                    heat = np.minimum(self.streams[stream1].q_below_remaining, self.streams[stream2].q_below_remaining) # Maximum heat exchanged is the minimum total heat between streams
                 else: # Can't use all the heat as the hot stream has a lower F*c_P, leading to a ΔT conflict
                     # Finding a temporary temperature where the heats exchanged are equal, but still respecting ΔT
                     T_F = (self.streams[stream1].cp * self.streams[stream1].flow_rate * self.streams[stream1].current_t_below.value * self.delta_temp_unit +
@@ -589,14 +588,14 @@ class HEN:
                     T_F /= self.streams[stream1].cp * self.streams[stream1].flow_rate + self.streams[stream2].cp * self.streams[stream2].flow_rate
                     heat_temp = self.streams[stream1].cp * self.streams[stream1].flow_rate * (self.streams[stream1].current_t_below.value*self.delta_temp_unit - T_F)
                     # The heat_temp value can be greater than the minimum total heat of one of the streams, so we must take this into account
-                    heat = np.minimum(self.streams[stream1].q_below_remaining, np.abs(self.streams[stream2].q_below_remaining))
+                    heat = np.minimum(self.streams[stream1].q_below_remaining, self.streams[stream2].q_below_remaining)
                     heat = np.minimum(heat, heat_temp)
             else: # Heat passed was a number, and no temperatures were passed
                 heat = heat * self.streams[stream1].q_above.units
             
             s1_q_below = self.streams[stream1].q_below_remaining - heat
             s1_t_below = self.streams[stream1].current_t_below - heat/(self.streams[stream1].cp * self.streams[stream1].flow_rate)
-            s2_q_below = self.streams[stream2].q_below_remaining + heat
+            s2_q_below = self.streams[stream2].q_below_remaining - heat
             s2_t_below = self.streams[stream2].current_t_below + heat/(self.streams[stream2].cp * self.streams[stream2].flow_rate)
             
             # Data validation
