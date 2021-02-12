@@ -471,9 +471,9 @@ class HEN:
         m = GEKKO(remote = False)
 
         # The extra interval represents the heats coming in from "above the highest interval" (always 0)
-        residuals = m.Array(m.Var, (m.sum(myhen.hot_streams) + myhen.hot_utilities, myhen._interval_heats.shape[-1] + 1), lb = 0)
+        residuals = m.Array(m.Var, (m.sum(self.hot_streams) + self.hot_utilities, self._interval_heats.shape[-1] + 1), lb = 0)
         # Q_exchanger is how much heat each exchanger will transfer. It's multiplied (in the eqns below) by another array to remove matches where there are no streams
-        Q_exchanger = m.Array(m.Var, (m.sum(myhen.hot_streams) + myhen.hot_utilities, np.sum(~myhen.hot_streams) + myhen.cold_utilities, myhen._interval_heats.shape[-1] ), lb = 0) # Hot streams, cold streams, and intervals
+        Q_exchanger = m.Array(m.Var, (m.sum(self.hot_streams) + self.hot_utilities, np.sum(~self.hot_streams) + self.cold_utilities, self._interval_heats.shape[-1] ), lb = 0) # Hot streams, cold streams, and intervals
         Q_exc_tot = m.Array(m.Const, Q_exchanger.shape[:2])
         for rowidx in range(Q_exchanger.shape[0]):
             for colidx in range(Q_exchanger.shape[1]):
@@ -501,22 +501,22 @@ class HEN:
         """
 
         # Eqn 1
-        for stidx, rowidx in enumerate(range(myhen.hot_utilities, Q_exchanger.shape[0])): # stidx bc self.hot_streams has only streams, no utilities
+        for stidx, rowidx in enumerate(range(self.hot_utilities, Q_exchanger.shape[0])): # stidx because self.hot_streams has only streams, no utilities
             for colidx in range(Q_exchanger.shape[2]):
-                m.Equation(residuals[rowidx, colidx] - residuals[rowidx, colidx+1] + m.sum(Q_exchanger[rowidx, :, colidx])*min(myhen._interval_heats[myhen.hot_streams][stidx, colidx], 1) ==
-                    myhen._interval_heats[myhen.hot_streams][rowidx, colidx])
+                m.Equation(residuals[rowidx, colidx] - residuals[rowidx, colidx+1] + m.sum(Q_exchanger[rowidx, :, colidx])*min(self._interval_heats[self.hot_streams][stidx, colidx], 1) ==
+                    self._interval_heats[self.hot_streams][rowidx, colidx])
         # Eqn 2
-        for rowidx in range(myhen.hot_utilities):
+        for rowidx in range(self.hot_utilities):
             for colidx in range(Q_exchanger.shape[2]):
-                m.Equation(residuals[rowidx, colidx] - residuals[rowidx, colidx+1] + m.sum(Q_exchanger[rowidx, myhen.cold_utilities:, colidx]) == myhen.first_utility.value)
+                m.Equation(residuals[rowidx, colidx] - residuals[rowidx, colidx+1] + m.sum(Q_exchanger[rowidx, self.cold_utilities:, colidx]) == self.first_utility.value)
         # Eqn 3
-        for stidx, rowidx in enumerate(range(myhen.cold_utilities, Q_exchanger.shape[1])):
+        for stidx, rowidx in enumerate(range(self.cold_utilities, Q_exchanger.shape[1])):
             for colidx in range(Q_exchanger.shape[2]):
-                m.Equation(m.sum(Q_exchanger[:, rowidx, colidx])*min(myhen._interval_heats[~myhen.hot_streams][stidx, colidx], 1) == myhen._interval_heats[~myhen.hot_streams][stidx, colidx])
+                m.Equation(m.sum(Q_exchanger[:, rowidx, colidx])*min(self._interval_heats[~self.hot_streams][stidx, colidx], 1) == self._interval_heats[~self.hot_streams][stidx, colidx])
         # Eqn 4
-        for rowidx in range(myhen.cold_utilities):
+        for rowidx in range(self.cold_utilities):
             for colidx in range(Q_exchanger.shape[2]):
-                m.Equation(m.sum(Q_exchanger[myhen.hot_utilities:, rowidx, colidx]) == myhen.last_utility.value)
+                m.Equation(m.sum(Q_exchanger[self.hot_utilities:, rowidx, colidx]) == self.last_utility.value)
         
         for rowidx in range(Q_exc_tot.shape[0]): # Matricial eqn returns TypeError bc int has no len()
             for colidx in range(Q_exc_tot.shape[1]):
