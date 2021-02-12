@@ -12,6 +12,7 @@ from tkinter import ttk
 import os
 import pickle
 import warnings
+from gekko import GEKKO
 
 #################################################################################################################
 # SECTION 1 - FRONT END
@@ -450,10 +451,11 @@ class HEN:
         ax.Position = [ti(1), ti(2), 1 - ti(1) - ti(3), 1 - ti(2) - ti(4)]; % Removing whitespace from the graph
         """
 
-    def place_exchangers(self, upper = None):
+    def place_exchangers(self, upper = None, lower = None):
         """
         Notes to self (WIP):
         Equations come from C.A. Floudas, "Nonlinear and Mixed-Integer Optimization", p. 283
+        Currently skipping the R_0 = R_K = 0 equation - will see how to best implement this (ul or m.Equation)
 
         self._interval_heats has each stream as its rows and each interval as its columns, such that the topmost interval is the rightmost column
 
@@ -465,27 +467,65 @@ class HEN:
         self.hot_utilities = 1
         self.cold_utilities = 1
 
-        def _objective(self, residuals = None, Q_exchanger_above = None):
-            # Starting up
-            if residuals is None:
-                # The extra interval represents the heats coming in from "above the highest interval" (always 0)
-                residuals = np.zeros( (np.sum(self.hot_streams) + self.hot_utilities, self._interval_heats.shape[-1] + 1) )
-            if Q_exchanger is None:
-                # Q_exchanger is how much heat each exchanger will transfer. It's multiplied (in the eqns below) by another array to remove matches where there are no streams
-                Q_exchanger = np.zeros((np.sum(self.hot_streams) + self.hot_utilities, np.sum(~self.hot_streams) + self.cold_utilities, self._interval_heats.shape[-1] )) # Hot streams, cold streams, and intervals
+        # Starting GEKKO
+        m = GEKKO(remote = False)
 
-        # The eqnX: things are just for readability, and will be removed from the code before the final version
-        eqn1: residuals[self.hot_utilities:, :-1] - residuals[self.hot_utilities:, 1:] + np.sum(Q_exchanger[self.hot_utilities:, :, :], axis = 1)*np.array(self._interval_heats[self.hot_streams], dtype = bool) = self._interval_heats[self.hot_streams]
-        eqn2: residuals[:self.hot_utilities, :-1] - residuals[:self.hot_utilities, 1:] + np.sum(Q_exchanger[:self.hot_utilities, self.cold_utilities:, :], axis = 1)*np.ones((self.hot_utilities, self._interval_heats.shape[-1]), dtype = bool) = np.ones((self.hot_utilities, self._interval_heats.shape[-1]))*self.first_utility.value
-        eqn3: np.sum(Q_exchanger[:, self.cold_utilities:, :], axis = 0)*np.array(self._interval_heats[~self.hot_streams] , dtype = bool) = self._interval_heats[~self.hot_streams]
-        eqn4: np.sum(Q_exchanger[self.hot_utilities:, :self.cold_utilities, :], axis = 0)*np.ones((self.cold_utilities, self._interval_heats.shape[-1]), dtype = bool) =  np.ones((self.cold_utilities, self._interval_heats.shape[-1]))*self.last_utility.value
-        eqn6: Q_exc_tot = np.sum(Q_exchanger, axis = 2)
-
-        # Setting the upper heat exchanged limit for each pair of streams
+        # The extra interval represents the heats coming in from "above the highest interval" (always 0)
+        residuals = m.Array(m.Var, (m.sum(myhen.hot_streams) + myhen.hot_utilities, myhen._interval_heats.shape[-1] + 1), lb = 0)
+        # Q_exchanger is how much heat each exchanger will transfer. It's multiplied (in the eqns below) by another array to remove matches where there are no streams
+        Q_exchanger = m.Array(m.Var, (m.sum(myhen.hot_streams) + myhen.hot_utilities, np.sum(~myhen.hot_streams) + myhen.cold_utilities, myhen._interval_heats.shape[-1] ), lb = 0) # Hot streams, cold streams, and intervals
+        Q_exc_tot = m.Array(m.Const, Q_exchanger.shape[:2])
+        for rowidx in range(Q_exchanger.shape[0]):
+            for colidx in range(Q_exchanger.shape[1]):
+                Q_exc_tot[rowidx, colidx] = m.Intermediate(m.sum(Q_exchanger[rowidx, colidx, :]))
+        matches = m.Array(m.Var, Q_exc_tot.shape, lb = 0, ub = 1, integer = True) # Whether there is a heat exchanger between two streams
+        
+        # Setting the heat exchanged limits for each pair of streams
         if upper is None:
             # Hot streams and cold utilities
             pass
+        if lower is None:
+            lower = m.Array(m.Const, Q_exc_tot.shape, value = 0)
         
+        """
+        Matricial equations, as described in C.A. Floudas, "Nonlinear and Mixed-Integer Optimization", p. 283
+        These don't really work, but I'm keeping them for historical reasons
+        eqn1_left = residuals[self.hot_utilities:, :-1] - residuals[self.hot_utilities:, 1:] + np.sum(Q_exchanger[self.hot_utilities:, :, :], axis = 1)*np.array(self._interval_heats[self.hot_streams], dtype = bool)
+        eqn1_right = self._interval_heats[self.hot_streams]
+        eqn2_left = residuals[:self.hot_utilities, :-1] - residuals[:self.hot_utilities, 1:] + np.sum(Q_exchanger[:self.hot_utilities, self.cold_utilities:, :], axis = 1)*np.ones((self.hot_utilities, self._interval_heats.shape[-1]), dtype = bool)
+        eqn2_right = np.ones((self.hot_utilities, self._interval_heats.shape[-1]))*self.first_utility.value
+        eqn3_left = np.sum(Q_exchanger[:, self.cold_utilities:, :], axis = 0)*np.array(self._interval_heats[~self.hot_streams] , dtype = bool)
+        eqn3_right = self._interval_heats[~self.hot_streams]
+        eqn4_left = np.sum(Q_exchanger[self.hot_utilities:, :self.cold_utilities, :], axis = 0)*np.ones((self.cold_utilities, self._interval_heats.shape[-1]), dtype = bool)
+        eqn4_right = np.ones((self.cold_utilities, self._interval_heats.shape[-1]))*self.last_utility.value
+        """
+
+        # Eqn 1
+        for stidx, rowidx in enumerate(range(myhen.hot_utilities, Q_exchanger.shape[0])): # stidx bc self.hot_streams has only streams, no utilities
+            for colidx in range(Q_exchanger.shape[2]):
+                m.Equation(residuals[rowidx, colidx] - residuals[rowidx, colidx+1] + m.sum(Q_exchanger[rowidx, :, colidx])*min(myhen._interval_heats[myhen.hot_streams][stidx, colidx], 1) ==
+                    myhen._interval_heats[myhen.hot_streams][rowidx, colidx])
+        # Eqn 2
+        for rowidx in range(myhen.hot_utilities):
+            for colidx in range(Q_exchanger.shape[2]):
+                m.Equation(residuals[rowidx, colidx] - residuals[rowidx, colidx+1] + m.sum(Q_exchanger[rowidx, myhen.cold_utilities:, colidx]) == myhen.first_utility.value)
+        # Eqn 3
+        for stidx, rowidx in enumerate(range(myhen.cold_utilities, Q_exchanger.shape[1])):
+            for colidx in range(Q_exchanger.shape[2]):
+                m.Equation(m.sum(Q_exchanger[:, rowidx, colidx])*min(myhen._interval_heats[~myhen.hot_streams][stidx, colidx], 1) == myhen._interval_heats[~myhen.hot_streams][stidx, colidx])
+        # Eqn 4
+        for rowidx in range(myhen.cold_utilities):
+            for colidx in range(Q_exchanger.shape[2]):
+                m.Equation(m.sum(Q_exchanger[myhen.hot_utilities:, rowidx, colidx]) == myhen.last_utility.value)
+        
+        for rowidx in range(Q_exc_tot.shape[0]): # Matricial eqn returns TypeError bc int has no len()
+            for colidx in range(Q_exc_tot.shape[1]):
+                m.Equation(lower[rowidx, colidx]*matches[rowidx, colidx] <= Q_exc_tot[rowidx, colidx])
+                m.Equation(upper[rowidx, colidx]*matches[rowidx, colidx] >= Q_exc_tot[rowidx, colidx])
+        m.Obj(np.sum(matches))
+        m.options.IMODE = 3 # Steady-state optimization
+        m.solve()
+
 
     def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, t_in = None, t_out = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), 
         exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0, pressure_unit = unyt.Pa):
