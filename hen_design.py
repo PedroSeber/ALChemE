@@ -313,7 +313,7 @@ class HEN:
         self.last_utility = q_sum[-1] * self.flow_unit*self.delta_temp_unit*self.cp_unit
         self.enthalpy_hot = np.insert(enthalpy_hot, 0, 0) # The first value in enthalpy_hot is defined as 0
         # Shifting the cold enthalpy so that the first value starts at positive last_utility
-        self.enthalpy_cold = np.insert(enthalpy_cold[:-1], 0, self.last_utility)
+        self.enthalpy_cold = np.insert(enthalpy_cold, 0, self.last_utility)
         print('The last utility is %g %s\n' % (self.last_utility, self.last_utility.units))
 
         # Getting heats above / below pinch for each stream
@@ -422,11 +422,11 @@ class HEN:
         ax2.set_title('Composite Curve')
         ax2.set_ylabel(f'Temperature ({self.temp_unit})')
         ax2.set_xlabel(f'Enthalpy ({self.first_utility.units})')
-        # A given interval may not have hot or cold streams. The indexing of self.plotted_ylines attempts to fix this
-        # There will still be issues if all streams on one side fully skip one or more intervals
-        # TODO: use streams_in_interval1 and 2 to index self.plotted_ylines 
-        ax2.plot(np.cumsum(self.enthalpy_hot), self._plotted_ylines[-len(self.enthalpy_hot):], '-or', linewidth = 0.25, ms = 1.5) # Assumes the topmost interval has a hot stream
-        ax2.plot(np.cumsum(self.enthalpy_cold), self._plotted_ylines[:len(self.enthalpy_cold)] - self.delta_t.value, '-ob', linewidth = 0.25, ms = 1.5) # Assumes the lowermost interval has a cold stream
+        # Note: There may be issues if all streams on one side fully skip one or more intervals. Not sure how to test this properly.
+        hot_index = np.concatenate(([True], np.sum(self._interval_heats[self.hot_streams], axis = 0, dtype = np.bool))) # First value in the hot scale is defined as 0, so it's always True
+        cold_index = np.concatenate(([True], np.sum(self._interval_heats[~self.hot_streams], axis = 0, dtype = np.bool))) # First value in the cold scale is defined as the cold utility, so it's always True
+        ax2.plot(np.cumsum(self.enthalpy_hot[hot_index]), self._plotted_ylines[hot_index], '-or', linewidth = 0.25, ms = 1.5)
+        ax2.plot(np.cumsum(self.enthalpy_cold[cold_index]), self._plotted_ylines[cold_index] - self.delta_t.value, '-ob', linewidth = 0.25, ms = 1.5)
 
         # Text showing the utilities and overlap
         top_text_loc = ax2.get_ylim()[1] - 0.03*(ax2.get_ylim()[1] - ax2.get_ylim()[0])
