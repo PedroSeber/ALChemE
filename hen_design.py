@@ -1,6 +1,6 @@
-#################################################################################################################
-# SECTION 0 - IMPORT CALLS
-
+##############################################################################
+# IMPORT CALLS
+##############################################################################
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
@@ -11,65 +11,83 @@ import tkinter as tk
 from tkinter import ttk
 import os
 import pickle
+import warnings
+from gekko import GEKKO
 
-#################################################################################################################
-# SECTION 1 - FRONT END
+##############################################################################
+# GUI (Front-End)
+##############################################################################
 
-dir_path = os.path.dirname(os.path.realpath(__file__))
-root = tk.Tk()
-
-# SECTION 1.1 - HEN Control Panel & Slaves
-class HENOS_control_panel:
+# CLASSES
+class HENOS_app():
     '''
-    A class which initializes HENOS control panel.
+    A class which holds the HENOS application. Slave of root window.
     '''
     def __init__(self, master):
+        
+        # Defining variables
+        self.master = master
+        self.style = ttk.Style()
+        self.style.configure('main.TFrame', foreground = "black", background = "red")
+        
         # Determine screen dimensions
         swidth = master.winfo_screenwidth()
         sheight = master.winfo_screenheight()
+        top = master.winfo_toplevel()
         
-        # Icon
-        #master.iconbitmap(dir_path + '\hen_tie.ico')
-        
-        # Initialize HEN Object
-        self.HEN_stream_analysis = HEN()
+        # Initialize dropdown menu
+        self.HENOS_dropdown_menu = tk.Menu(top)
+        top['menu'] = self.HENOS_dropdown_menu
         
         # Initialize tab system
-        self.tabControl = ttk.Notebook(master,
-                                  width = swidth,
-                                  height = sheight)
-        cp_tab = ttk.Frame(self.tabControl)
-        self.tabControl.add(cp_tab, text='HENOS Control Panel')
+        self.tabControl = ttk.Notebook(self.master, width=swidth, height=sheight)
+        
+        # Intialize dropdown menu options
+        self.fileMenu = tk.Menu(self.HENOS_dropdown_menu, tearoff=0)
+        self.fileMenu.add_command(label='New')
+        self.fileMenu.add_command(label='Open')
+        self.fileMenu.add_command(label='Save')
+        self.fileMenu.add_command(label='Save As')
+        self.HENOS_dropdown_menu.add_cascade(label='File', menu=self.fileMenu)
+        
+        # Intialize control panel
+        control_panel_Tab = ttk.Frame(self.tabControl)
+        self.tabControl.add(control_panel_Tab, text='HENOS Control Panel')
         self.tabControl.pack(expand=1, fill='both')
-        self.HENOS_user_input = HENOS_stream_input(cp_tab, self.HEN_stream_analysis)
-        self.HENOS_run_analysis = HENOS_analysis_control(cp_tab, self.HEN_stream_analysis, self.tabControl)
-        cp_tab.grid_rowconfigure(0, weight=0)
-        cp_tab.grid_rowconfigure(1, weight=10)
-        cp_tab.grid_rowconfigure(2, weight=1)
-        self.HENOS_user_input.grid(column=0, row=0, rowspan=1, sticky='ew')
-        self.HENOS_user_input.HEN_stream_table.grid(column=0, row=1, rowspan=80, sticky="nw")
-        self.HENOS_run_analysis.grid(column=0, row=2, sticky="nsew")
+        
+        # Initialize HEN object
+        HEN_object = HEN()
+        
+        # Initialize control panel elements
+        self.HENOS_object_explorer = HENOS_object_explorer(control_panel_Tab, HEN_object)
+        self.HENOS_stream_input = HENOS_stream_input(control_panel_Tab, HEN_object, self.HENOS_object_explorer)
+        self.HENOS_oe_controls = HENOS_object_explorer_controls(control_panel_Tab, self.HENOS_object_explorer)
+        
+        
+        # Placing control panel elements
+        control_panel_Tab.rowconfigure(1, weight=1)
+        self.HENOS_stream_input.grid(row=0, column=0)
+        self.HENOS_object_explorer.grid(row=1, column=0, rowspan=40, columnspan=8, padx=5, sticky='nsew')
+        self.HENOS_oe_controls.grid(row=1, column=9, sticky='nw')
+        # test = ttk.Button(control_panel_Tab, text='test')
+        # test.grid(row=41, column=0, columnspan=8, sticky='ew')
 
 class HENOS_stream_input(ttk.Frame):
-    """
-    A class which holds the HEN stream user input. Slave of HENOS control panel.
-    """
-    def __init__(self, parent, HEN_stream_analysis):
-        
-        # Initialize Frame properties
-        ttk.Frame.__init__(self, parent, padding='0.25i')
-        
-        # Instantiate HEN_table object
-        self.HEN_stream_table = HENOS_table(parent)
-        
-        # Initialize stream input components
+    '''
+    A class which holds the HENOS stream input. Slave of HENOS_app.    
+    '''
+    def __init__(self, master, HEN_object, HEN_object_explorer):        
+        # Initialize frame properties
+        ttk.Frame.__init__(self, master, padding='0.25i')
+
+        # Defining variables
+        self.HEN_object = HEN_object
+        self.HEN_object_explorer = HEN_object_explorer
         self.HEN_stream_labels = ['Stream Name', 'Inlet Temperature',
                              'Outlet Temperature', 'Temperature Units',
                              'Heat Capacity Rate', 'Heat Capacity Rate Units',
                              'Heat Load', 'Heat Load Units']
         self.input_entries = {}
-        
-        self.HEN_stream_analysis = HEN_stream_analysis
         
         # Arrange stream input components
         for row in range(2):
@@ -83,11 +101,11 @@ class HENOS_stream_input(ttk.Frame):
                         e.grid(row=row, column=col)
                         self.input_entries[col] = e
                     elif col == 3:
-                        m = create_dropdown_menu(self, ['°C', '°F', 'K'])
+                        m = create_dropdown_menu(self, ['°C', '°F', '°K'])
                         m[0].grid(row = row, column=col)
                         self.input_entries[col] = m[1]
                     elif col == 5:
-                        m = create_dropdown_menu(self, ['J/(°C·s)', 'BTU/(°F·s)', 'J/(K·s)'])
+                        m = create_dropdown_menu(self, ['J/(°C·s)', 'BTU/(°F·s)', 'J/(°K·s)'])
                         m[0].grid(row = row, column=col)
                         self.input_entries[col] = m[1]
                     elif col == 7:
@@ -98,100 +116,144 @@ class HENOS_stream_input(ttk.Frame):
         # Initialize and arrange 'Add Stream' button
         sub_stream = ttk.Button(self, text="Add Stream", command=self.add_stream)
         sub_stream.grid(row=1, column=8, sticky='nsew')
-        
     
     def add_stream(self):
-        inputSV = []
+        # Populating raw input data vector
+        raw_input = []
         for col in range(8):
-            inputSV.append(self.input_entries[col].get())
-        printed_stream_values = [inputSV[0], inputSV[1] + ' ' + inputSV[3],
-                                 inputSV[2] + ' ' + inputSV[3], inputSV[4] + ' ' + inputSV[5],
-                                 inputSV[6] + ' ' + inputSV[7]]
-
-        self.HEN_stream_table.receive_new_stream(printed_stream_values)
-        self.HEN_stream_table.update_stream_display()
+            rawdata = self.input_entries[col].get()
+            if rawdata == '': rawdata = None
+            raw_input.append(rawdata)
+            if col in [0, 1, 2, 4, 6]:
+                self.input_entries[col].delete(0, 'end')
         
-        HEN.add_stream(self.HEN_stream_analysis, float(inputSV[1]), float(inputSV[2]), float(inputSV[4]), 
-                       stream_name=inputSV[0])
+        print(raw_input)
         
-        self.HEN_stream_analysis_params = self.HEN_stream_analysis.get_parameters()
+        # HEN object input data sanitation
+        for ii in [1, 2, 4, 6]:
+            try:
+                numericdata = float(raw_input[ii])
+                raw_input[ii] = numericdata
+            except TypeError:
+                continue
         
-
-class HENOS_table(ttk.Frame):
-    '''
-    A class which holds the HEN stream table. Slave of HENOS control panel.
-    '''
-    def __init__(self, parent):
+        print(raw_input)
         
-        ttk.Frame.__init__(self, parent, padding='0.25i')
-        
-        for col in range(6):
-            tl = ttk.Label(self, text=['Stream Name', 'Inlet Temperature',
-                                       'Outlet Temperature', 'Heat Capacity Rate',
-                                       'Heat Load', 'Activate/Deactivate'][col])
-            tl.grid(row = 0, column=col, padx=10)
-        
-        self.HEN_stream_list = []
+        #sanInput = ['inlet temperature', 'outlet temperature', 'flow rate', 'heat', 'stream name', 'temperature unit']
             
-    def receive_new_stream(self, input_stream_values):
-        stream_info = []
-        
-        for col in range(5):
-            stream_info.append(input_stream_values[col])
-            
-        self.HEN_stream_list.append(stream_info)
+        # Add input to HEN object and data display
+        self.HEN_object.add_stream(t1 = raw_input[1], t2 = raw_input[2], cp = raw_input[4], heat = raw_input[6], stream_name = raw_input[0], HENOS_oe_tree = self.HEN_object_explorer.objectExplorer)
     
-    def update_stream_display(self):
-        for stream_number in range(len(self.HEN_stream_list)):
-            for element_number in range(len(self.HEN_stream_list[stream_number])):
-                l = ttk.Label(self, text=self.HEN_stream_list[stream_number][element_number])
-                l.grid(row=stream_number+1, column=element_number, padx=10)
-        
 
-class HENOS_analysis_control(ttk.Frame):
+class HENOS_object_explorer(ttk.Frame):
     '''
-    A class which holds the HEN analysis buttons. Slave of HENOS control panel.
+    A class which holds the HENOS object explorer and visualizer. Slave of
+    HENOS_app.
     '''
-    def __init__(self, parent, HEN_object, HENOS_tab_control):
+    def __init__(self, master, HEN_object):
+        # Initialize frame properties
+        ttk.Frame.__init__(self, master, padding='0.25i')
         
-        ttk.Frame.__init__(self, parent, padding='0.25i')
-        
-        self.parent_frame = parent
+        # Defining variables
         self.HEN_object = HEN_object
-        self.HENOS_tab_control = HENOS_tab_control
         
-        tidButton = ttk.Button(self, text="Temperature Interval Diagram", command=self.generate_tid)
-        ccButton = ttk.Button(self, text="Composite Curve", command=self.generate_cc)
-        solutionButton = ttk.Button(self, text="Run HEN Solution Optimization")
+        # Initialize object explorer        
+        self.objectExplorer = HENOS_objE_tree(self, self.HEN_object)
+    
         
-        tidButton.grid(row=0, column=2, padx=10, sticky='s')
-        ccButton.grid(row=1, column=2, padx=10, sticky='s')
-        solutionButton.grid(row=1, column=0, padx=10, sticky='s')
-    def generate_cc(self):
-        self.HEN_object.make_cc(self.HENOS_tab_control)
-    def generate_tid(self):
-        self.HEN_object.make_tid(tab_control = self.HENOS_tab_control)
+        # Initialize object visualizer
+        self.objectVisualizer = HENOS_objE_display(self, self.HEN_object)
+        
+        # Place object explorer and visualizer
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+        self.rowconfigure(41, weight=1)
+        self.objectExplorer.grid(row=0, column=0)
+        self.objectExplorer.grid(row=0, column=0, rowspan=40, columnspan=8, padx=5, sticky='nsew')
+        self.objectVisualizer.grid(row=41, column=0, rowspan=1, columnspan=8, padx=5, pady=25, sticky='nsew')
 
+class HENOS_objE_display(tk.Text):
+    def __init__(self, master, HEN_object):
+        # Initialize text properties
+        tk.Text.__init__(self, master)
+        
+        # Defining variables
+        self.HEN_object = HEN_object
+        
+        # Initialize vertical scrollbar
+        self.verscrlbar = ttk.Scrollbar(self, orient='vertical', command=self.yview)
+        self.verscrlbar.pack(side='right', fill='y')
+        self.configure(yscrollcommand=self.verscrlbar.set)
+    
+    def print2screen(self, object_name):
+        self.delete(1.0, 'end')
+        displaytext = str(self.HEN_object.streams[object_name])
+        self.insert('end', displaytext)
+
+class HENOS_objE_tree(ttk.Treeview):
+    '''
+    A class which holds the Treeview object which forms the basis of the
+    object explorer. Slave of HENOS_object_explorer
+    '''
+    def __init__(self, master, HEN_object):
+        # Initialize treeview properties
+        ttk.Treeview.__init__(self, master, show='tree')
+        style = ttk.Style()
+        style.layout("Treeview", [('Treeview.treearea', {'sticky': 'nswe'})])
+        self['columns'] = ('1', '2', '3', '4', '5')
+        
+        # Defining variables
+        self.HEN_object = HEN_object
+        self.master = master
+        
+        # Intialize vertical scrollbar
+        self.verscrlbar = ttk.Scrollbar(self, orient='vertical', command=self.yview)
+        self.verscrlbar.pack(side='right', fill='y')
+        self.configure(yscrollcommand=self.verscrlbar.set)
+        
+        # Intialize object classes in treeview
+        self.StreamNode = self.insert('', index=0, iid=0, text='STREAMS', values=('Inlet Temperature', 'Outlet Temperature', 'Heat Capacity Rate', 'Heat Load'))
+        self.HXNode = self.insert('', index=1, iid=1, text='HEAT EXCHANGERS')
+        self.UtilityNode = self.insert('', index=2, iid=2, text='UTILITIES')
+        
+        # Initialize 'Double Click' Event
+        self.bind("<Double-1>", self.send2screen)
+        
+    def receive_new_stream(self, oeDataVector):
+        self.insert(self.StreamNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), str(oeDataVector[2]), str(oeDataVector[3])))
+        
+    def delete_item(self):
+        selected_item  = self.selection()[0]
+        self.delete(selected_item)
+        
+    def send2screen(self, event):
+        HEN_selectedObject = self.identify('item',event.x, event.y)
+        print(HEN_selectedObject)
+        HEN_sO_name = self.item(HEN_selectedObject, 'text')
+        self.master.objectVisualizer.print2screen(HEN_sO_name)
+        
+        
+
+class HENOS_object_explorer_controls(ttk.Frame):
+    def __init__(self, master, object_explorer):
+        # Initialize frame properties
+        ttk.Frame.__init__(self, master, padding='0.25i')
+        
+        # Delete streams button
+        delete_stream = ttk.Button(self, text='Delete Stream', command=object_explorer.objectExplorer.delete_item)
+        
+        delete_stream.grid(row=0, column=0)
+        
+
+# FUNCTIONS
 def create_dropdown_menu(master, options):
     var = tk.StringVar(master)
     menu = ttk.OptionMenu(master, var, options[0], *options)
     return [menu, var]
 
-def generate_GUI_plot(plot, tabControl, tab_name):
-    """
-    A function which generates a relevant model plot onto the GUI
-    """
-    new_tab = ttk.Frame(tabControl)
-    tabControl.add(new_tab, text=tab_name)
-    tabControl.pack(expand=1, fill='both')
-    new_canvas = FigureCanvasTkAgg(plot, master=new_tab)
-    new_canvas.draw()
-
-    new_canvas.get_tk_widget().pack()
-
-#################################################################################################################
-# SECTION 2 - BACK END
-
+##############################################################################
+# (Back-End)
+##############################################################################
 class HEN:
     """
     A class that holds streams and exchangers, used to solve HEN problems
@@ -213,14 +275,45 @@ class HEN:
             self.delta_temp_unit = unyt.delta_degF
         else:
             self.delta_temp_unit = temp_unit
+
+        self.heat_unit = self.flow_unit * self.cp_unit * self.delta_temp_unit
     
-    def add_stream(self, t1, t2, cp, flow_rate = 1, stream_name = None, temp_unit = None, cp_unit = None, flow_unit = None):
-        if flow_unit is None:
-            flow_unit = self.flow_unit
+    def add_stream(self, t1, t2, cp = None, flow_rate = 1, heat = None, stream_name = None, temp_unit = None, cp_unit = None, flow_unit = None, heat_unit = None, HENOS_oe_tree = None):
+        if cp is None and heat is None:
+            raise ValueError('One of cp or heat must be passed')
+        elif cp is not None and heat is not None:
+            warnings.warn('You have passed both a cp and a heat. The heat input will be ignored')
+
+        # Converting to default units (as declared via the HEN class)        
         if temp_unit is None:
-            temp_unit = self.temp_unit
-        if cp_unit is None:
-            cp_unit = self.cp_unit
+            t1 *= self.temp_unit
+            t2 *= self.temp_unit
+        else:
+            t1 *= temp_unit
+            t1 = t1.to(self.temp_unit)
+            t2 *= temp_unit
+            t2 = t2.to(self.temp_unit)
+        
+        if flow_unit is None:
+            flow_rate *= self.flow_unit
+        else:
+            flow_rate *= flow_unit
+            flow_rate = flow_rate.to(self.flow_unit)
+        
+        if cp: # cp was passed; ignoring any value passed in the heat parameter
+            if cp_unit is None:
+                cp *= self.cp_unit
+            else:
+                cp *= cp_unit
+                cp = cp.to(self.cp_unit)
+        else: # Heat was passed
+            if heat_unit is None:
+                heat *= self.heat_unit
+            else:
+                heat *= heat_unit
+                heat = heat.to(self.heat_unit)
+            cp = heat / (np.abs(t2.value - t1.value)*self.delta_temp_unit)
+        
         if stream_name is None:
             if t1 > t2: # Hot stream
                 letter = 'H'
@@ -231,7 +324,9 @@ class HEN:
                 idx += 1
             stream_name = f'{letter}{idx}'
 
-        self.streams[stream_name] = Stream(t1, t2, cp, flow_rate, flow_unit, temp_unit, cp_unit)
+        self.streams[stream_name] = Stream(t1, t2, cp, flow_rate)
+        oeDataVector = [stream_name, t1, t2, flow_rate]
+        HENOS_oe_tree.receive_new_stream(oeDataVector)
 
     def get_parameters(self):
         """
@@ -277,16 +372,16 @@ class HEN:
             self.first_utility_loc = len(q_sum)
             print('Warning: there is no pinch point nor a first utility\n')
         
-        self.last_utility = -q_sum[-1] * self.flow_unit*self.delta_temp_unit*self.cp_unit
+        self.last_utility = q_sum[-1] * self.flow_unit*self.delta_temp_unit*self.cp_unit
         self.enthalpy_hot = np.insert(enthalpy_hot, 0, 0) # The first value in enthalpy_hot is defined as 0
         # Shifting the cold enthalpy so that the first value starts at positive last_utility
-        self.enthalpy_cold = np.insert(enthalpy_cold[:-1], 0, -self.last_utility)
+        self.enthalpy_cold = np.insert(enthalpy_cold, 0, self.last_utility)
         print('The last utility is %g %s\n' % (self.last_utility, self.last_utility.units))
 
         # Getting heats above / below pinch for each stream
         streams_in_interval = np.zeros((len(self.streams), len(delta_plotted_ylines)), dtype = np.int8)
         streams_in_interval[self.hot_streams, :] = streams_in_interval1
-        streams_in_interval[~self.hot_streams, :] = -1*streams_in_interval2 # TODO: remove this -1 and operate all heats as >0. Will need to change the exchanger function as well
+        streams_in_interval[~self.hot_streams, :] = streams_in_interval2 # TODO: remove this -1 and operate all heats as >0. Will need to change the exchanger function as well
         self._interval_heats = streams_in_interval * cp_vals * delta_plotted_ylines
         q_above = np.sum(self._interval_heats[:, -1-self.first_utility_loc:], axis = 1)
         q_below = np.sum(self._interval_heats[:, :-1-self.first_utility_loc], axis = 1)
@@ -335,7 +430,6 @@ class HEN:
         
         
         # Manipulating the temperatures so that the hot and cold values are on the same y-position, even though they're shifted by delta_t
-        plotted_ylines = np.empty(temperatures.size, dtype = 'object')
         for idx in range(len(temperatures)):
             if temperatures[idx, 0] > temperatures[idx, 1]:
                 my_color = 'r'
@@ -378,8 +472,8 @@ class HEN:
                 ax1.text(np.mean(ax1.get_xlim()), self._plotted_ylines[-2-self.first_utility_loc] - 1, 'Pinch Point', ha = 'center', va = 'top')
         
         plt.show(block = False)
-        if tab_control: # Embed into GUI
-            generate_GUI_plot(fig1, tab_control, 'Temperature Interval Diagram')
+        #if tab_control: # Embed into GUI
+         #   generate_GUI_plot(fig1, tab_control, 'Temperature Interval Diagram')
 
     def make_cc(self, tab_control = None):
         plt.rcParams['axes.titlesize'] = 5
@@ -390,28 +484,28 @@ class HEN:
         ax2.set_title('Composite Curve')
         ax2.set_ylabel(f'Temperature ({self.temp_unit})')
         ax2.set_xlabel(f'Enthalpy ({self.first_utility.units})')
-        # A given interval may not have hot or cold streams. The indexing of self.plotted_ylines attempts to fix this
-        # There will still be issues if all streams on one side fully skip one or more intervals
-        # TODO: use streams_in_interval1 and 2 to index self.plotted_ylines 
-        ax2.plot(np.cumsum(self.enthalpy_hot), self._plotted_ylines[-len(self.enthalpy_hot):], '-or', linewidth = 0.25, ms = 1.5) # Assumes the topmost interval has a hot stream
-        ax2.plot(np.cumsum(self.enthalpy_cold), self._plotted_ylines[:len(self.enthalpy_cold)] - self.delta_t.value, '-ob', linewidth = 0.25, ms = 1.5) # Assumes the lowermost interval has a cold stream
+        # Note: There may be issues if all streams on one side fully skip one or more intervals. Not sure how to test this properly.
+        hot_index = np.concatenate(([True], np.sum(self._interval_heats[self.hot_streams], axis = 0, dtype = np.bool))) # First value in the hot scale is defined as 0, so it's always True
+        cold_index = np.concatenate(([True], np.sum(self._interval_heats[~self.hot_streams], axis = 0, dtype = np.bool))) # First value in the cold scale is defined as the cold utility, so it's always True
+        ax2.plot(np.cumsum(self.enthalpy_hot[hot_index]), self._plotted_ylines[hot_index], '-or', linewidth = 0.25, ms = 1.5)
+        ax2.plot(np.cumsum(self.enthalpy_cold[cold_index]), self._plotted_ylines[cold_index] - self.delta_t.value, '-ob', linewidth = 0.25, ms = 1.5)
 
         # Text showing the utilities and overlap
         top_text_loc = ax2.get_ylim()[1] - 0.03*(ax2.get_ylim()[1] - ax2.get_ylim()[0])
         cold_text_loc = ax2.get_xlim()[0] + 0.03*(ax2.get_xlim()[1] - ax2.get_xlim()[0])
-        cold_text = 'Cold utility:\n%4g %s' % (self.last_utility, self.last_utility.units)
+        cold_text = 'Minimum Cold utility:\n%4g %s' % (self.last_utility, self.last_utility.units)
         ax2.text(cold_text_loc, top_text_loc, cold_text, ha = 'left', va = 'top')
         hot_text_loc = ax2.get_xlim()[1] - 0.03*(ax2.get_xlim()[1] - ax2.get_xlim()[0])
-        hot_text = 'Hot utility:\n%4g %s' % (self.first_utility, self.first_utility.units)
+        hot_text = 'Minimum Hot utility:\n%4g %s' % (self.first_utility, self.first_utility.units)
         ax2.text(hot_text_loc, top_text_loc, hot_text, ha = 'right', va = 'top')
         overlap_text_loc = np.mean(ax2.get_xlim())
         overlap = np.minimum(np.cumsum(self.enthalpy_hot)[-1], np.cumsum(self.enthalpy_cold)[-1]) - np.maximum(self.enthalpy_hot[0], self.enthalpy_cold[0])
-        overlap_text = 'Heat recovery:\n%4g %s' % (overlap, self.first_utility.units)
+        overlap_text = 'Maximum Heat recovery:\n%4g %s' % (overlap, self.first_utility.units)
         ax2.text(overlap_text_loc, top_text_loc, overlap_text, ha = 'center', va = 'top')
 
         plt.show(block = False)
-        if tab_control: # Embed into GUI
-            generate_GUI_plot(fig2, tab_control, 'Composite Curve')
+        #if tab_control: # Embed into GUI
+        #    generate_GUI_plot(fig2, tab_control, 'Composite Curve')
 
         """ TODO: remove whitespace around the graphs
         ax = gca;
@@ -419,43 +513,159 @@ class HEN:
         ax.Position = [ti(1), ti(2), 1 - ti(1) - ti(3), 1 - ti(2) - ti(4)]; % Removing whitespace from the graph
         """
 
-    def place_exchangers(self, upper = None):
+    def place_exchangers(self, upper = None, lower = None, forbidden = None, required = None):
         """
         Notes to self (WIP):
         Equations come from C.A. Floudas, "Nonlinear and Mixed-Integer Optimization", p. 283
+        Currently skipping the R_0 = R_K = 0 equation - will see how to best implement this (ul or m.Equation)
         self._interval_heats has each stream as its rows and each interval as its columns, such that the topmost interval is the rightmost column
-        First N rows of residuals are the N hot utilities
-        First N rows of Q_exchanger are the N hot utilities; first M columns are the M cold utilities
         """
 
         # TODO: create an add_utility function, which receives the utility type, temperature, and cost. Integrate with the rest of the code
         self.hot_utilities = 1
         self.cold_utilities = 1
 
-        def _objective(self, residuals = None, Q_exchanger_above = None):
-            # Starting up
-            if residuals is None:
-                # The extra interval represents the heats coming in from "above the highest interval" (always 0)
-                residuals = np.zeros( (np.sum(self.hot_streams) + self.hot_utilities, self._interval_heats.shape[-1] + 1) )
-            if Q_exchanger is None:
-                #Q_exchanger is how much heat each exchanger will transfer. It's multiplied (in the eqns below) by another array to remove matches where there are no streams
-                Q_exchanger = np.zeros((np.sum(self.hot_streams) + self.hot_utilities, np.sum(~self.hot_streams) + self.cold_utilities, self._interval_heats.shape[-1] )) # Hot streams, cold streams, and intervals
+        # Starting GEKKO
+        m = GEKKO(remote = False)
 
-        # The eqnX: things are just for readability, and will be removed from the code before the final version
-        eqn1: residuals[self.hot_utilities:, :-1] - residuals[self.hot_utilities:, 1:] + np.sum(Q_exchanger[self.hot_utilities:, :, :], axis = 1)*np.array(self._interval_heats[self.hot_streams], dtype = bool) = self._interval_heats[self.hot_streams]
-        eqn2: residuals[:self.hot_utilities, :-1] - residuals[:self.hot_utilities, 1:] + np.sum(Q_exchanger[:self.hot_utilities, self.cold_utilities:, :], axis = 1)*np.ones((self.hot_utilities, self._interval_heats.shape[-1]), dtype = bool) = np.ones((self.hot_utilities, self._interval_heats.shape[-1]))*self.first_utility.value
-        eqn3: np.sum(Q_exchanger[:, self.cold_utilities:, :], axis = 0)*np.array(self._interval_heats[~self.hot_streams] , dtype = bool) = self._interval_heats[~self.hot_streams]
-        eqn4: np.sum(Q_exchanger[self.hot_utilities:, :self.cold_utilities, :], axis = 0)*np.ones((self.cold_utilities, self._interval_heats.shape[-1]), dtype = bool) =  np.ones((self.cold_utilities, self._interval_heats.shape[-1]))*self.last_utility.value
-        eqn6: Q_exc_tot = np.sum(Q_exchanger, axis = 2)
-
-        # Setting the upper heat exchanged limit for each pair of streams
+        # Forbidden and required matches
+        if forbidden is None:
+            forbidden = np.zeros((np.sum(self.hot_streams) + self.hot_utilities, np.sum(~self.hot_streams) + self.cold_utilities), dtype = np.bool)
+        if required is None:
+            required = np.zeros_like(forbidden)
+        # Setting the heat exchanged limits for each pair of streams
         if upper is None:
             # Hot streams and cold utilities
             pass
+        if lower is None:
+            lower = np.zeros_like(forbidden, dtype = np.object)
+            for rowidx in range(lower.shape[0]):
+                for colidx in range(lower.shape[1]):
+                    lower[rowidx, colidx] = m.Const(0, f'Qlim_lower_{rowidx}{colidx}')
+
         
+        # First N rows of residuals are the N hot utilities
+        # The extra interval represents the heats coming in from "above the highest interval" (always 0)
+        residuals = np.zeros((np.sum(self.hot_streams) + self.hot_utilities, self._interval_heats.shape[-1] + 1), dtype = np.object)
+        for rowidx in range(residuals.shape[0]):
+            # All R_0 and R_K must equal 0
+            residuals[rowidx, 0] = m.Const(0, f'R_{rowidx}0') 
+            residuals[rowidx, residuals.shape[1]-1] = m.Const(0, f'R_{rowidx}{residuals.shape[1]-1}')
+            for colidx in range(1, residuals.shape[1] - 1):
+                if np.fliplr(self._interval_heats[self.hot_streams])[rowidx, colidx]:
+                    residuals[rowidx, colidx] = m.Var(0, lb = 0, name = f'R_{rowidx}{colidx}')
+                else: # Stream not in interval --> cannot have residual
+                    residuals[rowidx, colidx] = m.Const(0, f'R_{rowidx}{colidx}')
+        residuals = np.fliplr(residuals) # R_X0 is above the highest interval, R_X1 is the highest interval, and so on
+
+        # Q_exchanger is how much heat each exchanger will transfer
+        # First N rows of Q_exchanger are the N hot utilities; first M columns are the M cold utilities
+        Q_exchanger = np.zeros((np.sum(self.hot_streams) + self.hot_utilities, np.sum(~self.hot_streams) + self.cold_utilities, self._interval_heats.shape[-1] ), dtype = np.object) # Hot streams, cold streams, and intervals
+        hot_idx = 0 # Counter for streams
+        for rowidx in range(Q_exchanger.shape[0]):
+            cold_idx = 0 # Counter for streams; gets reset for every hot stream
+            for colidx in range(Q_exchanger.shape[1]):
+                for intervalidx in range(Q_exchanger.shape[2]):
+                    if rowidx < self.hot_utilities and colidx < self.cold_utilities: # Matches between 2 utilities shouldn't exist
+                        Q_exchanger[rowidx, colidx, intervalidx] = m.Const(0, f'Q_{rowidx}{colidx}{intervalidx+1}')
+                    elif rowidx >= self.hot_utilities and colidx >= self.cold_utilities: # Match between 2 streams
+                        if np.fliplr(self._interval_heats[self.hot_streams])[hot_idx, intervalidx] and np.fliplr(self._interval_heats[~self.hot_streams])[cold_idx, intervalidx]:
+                            Q_exchanger[rowidx, colidx, intervalidx] = m.Var(0, lb = 0, name = f'Q_{rowidx}{colidx}{intervalidx+1}')
+                        else:
+                            Q_exchanger[rowidx, colidx, intervalidx] = m.Const(0, f'Q_{rowidx}{colidx}{intervalidx+1}')
+                    elif rowidx >= self.hot_utilities: # Match between hot stream and cold utility
+                        if np.fliplr(self._interval_heats[self.hot_streams])[hot_idx, intervalidx]:
+                            Q_exchanger[rowidx, colidx, intervalidx] = m.Var(0, lb = 0, name = f'Q_{rowidx}{colidx}{intervalidx+1}')
+                        else:
+                            Q_exchanger[rowidx, colidx, intervalidx] = m.Const(0, f'Q_{rowidx}{colidx}{intervalidx+1}')
+                    else: # Match between hot utility and cold stream
+                        if np.fliplr(self._interval_heats[~self.hot_streams])[cold_idx, intervalidx]:
+                            Q_exchanger[rowidx, colidx, intervalidx] = m.Var(0, lb = 0, name = f'Q_{rowidx}{colidx}{intervalidx+1}')
+                        else:
+                            Q_exchanger[rowidx, colidx, intervalidx] = m.Const(0, f'Q_{rowidx}{colidx}{intervalidx+1}')
+                if colidx >= self.cold_utilities: # Don't increase if colidx represents a cold utility
+                    cold_idx += 1
+            if rowidx >= self.hot_utilities: # Don't increase if rowidx represents a hot utility
+                hot_idx += 1
+
+        Q_exchanger = Q_exchanger[:, :, ::-1] #Q_XX1 is the highest interval, Q_XX2 is the 2nd highest, and so on
+        
+        Q_exc_tot = np.zeros((Q_exchanger.shape[:2]), dtype = np.object)
+        for rowidx in range(Q_exchanger.shape[0]):
+            for colidx in range(Q_exchanger.shape[1]):
+                Q_exc_tot[rowidx, colidx] = m.Intermediate(m.sum(Q_exchanger[rowidx, colidx, :]), f'Q_tot_{rowidx}{colidx}')
+        
+        matches = np.zeros_like(Q_exc_tot, dtype = np.object) # Whether there is a heat exchanger between two streams
+        for rowidx in range(matches.shape[0]):
+            for colidx in range(matches.shape[1]):
+                if forbidden[rowidx, colidx]:
+                    matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
+                elif required[rowidx, colidx]:
+                    matches[rowidx, colidx] = m.Const(1, f'Y_{rowidx}{colidx}')
+                else:
+                    matches[rowidx, colidx] = m.Var(0, lb = 0, ub = 1, integer = True, name = f'Y_{rowidx}{colidx}')
+        
+        """
+        Matricial equations, as described in C.A. Floudas, "Nonlinear and Mixed-Integer Optimization", p. 283
+        These don't really work, but I'm keeping them for historical reasons
+        eqn1_left = residuals[self.hot_utilities:, :-1] - residuals[self.hot_utilities:, 1:] + np.sum(Q_exchanger[self.hot_utilities:, :, :], axis = 1)*np.array(self._interval_heats[self.hot_streams], dtype = bool)
+        eqn1_right = self._interval_heats[self.hot_streams]
+        eqn2_left = residuals[:self.hot_utilities, :-1] - residuals[:self.hot_utilities, 1:] + np.sum(Q_exchanger[:self.hot_utilities, self.cold_utilities:, :], axis = 1)*np.ones((self.hot_utilities, self._interval_heats.shape[-1]), dtype = bool)
+        eqn2_right = np.ones((self.hot_utilities, self._interval_heats.shape[-1]))*self.first_utility.value
+        eqn3_left = np.sum(Q_exchanger[:, self.cold_utilities:, :], axis = 0)*np.array(self._interval_heats[~self.hot_streams] , dtype = bool)
+        eqn3_right = self._interval_heats[~self.hot_streams]
+        eqn4_left = np.sum(Q_exchanger[self.hot_utilities:, :self.cold_utilities, :], axis = 0)*np.ones((self.cold_utilities, self._interval_heats.shape[-1]), dtype = bool)
+        eqn4_right = np.ones((self.cold_utilities, self._interval_heats.shape[-1]))*self.last_utility.value
+        """
+
+        # Eqn 1
+        for stidx, rowidx in enumerate(range(self.hot_utilities, Q_exchanger.shape[0])): # stidx bc self.hot_streams has only streams, no utilities
+            for colidx in range(Q_exchanger.shape[2]):
+                if self._interval_heats[self.hot_streams][stidx, colidx]:
+                    m.Equation(residuals[rowidx, colidx] - residuals[rowidx, colidx+1] +
+                        m.sum(Q_exchanger[rowidx, :, colidx]) == self._interval_heats[self.hot_streams][rowidx, colidx])
+
+        # Eqn 2
+        for rowidx in range(self.hot_utilities):
+            for colidx in range(Q_exchanger.shape[2]):
+                m.Equation(residuals[rowidx, colidx] - residuals[rowidx, colidx+1] +
+                    m.sum(Q_exchanger[rowidx, self.cold_utilities:, colidx]) == self.first_utility.value)
+        # Eqn 3
+        for stidx, rowidx in enumerate(range(self.cold_utilities, Q_exchanger.shape[1])):
+            for colidx in range(Q_exchanger.shape[2]):
+                if self._interval_heats[~self.hot_streams][stidx, colidx] and np.sum(self._interval_heats[self.hot_streams], axis = 0)[colidx]:
+                # Second part of the if-statement: checks whether there are any hot streams in that interval
+                # TODO: change this. A hot stream above the interval can transfer to a cold stream, so I need to revamp how the intervals are defined (beggining of the streams only)
+                    m.Equation(m.sum(Q_exchanger[:, rowidx, colidx]) == self._interval_heats[~self.hot_streams][stidx, colidx])
+        # Eqn 4
+        for rowidx in range(self.cold_utilities):
+            m.Equation(m.sum(Q_exchanger[self.hot_utilities:, 0, :]) == self.last_utility.value)
+        
+        for rowidx in range(Q_exc_tot.shape[0]):
+            for colidx in range(Q_exc_tot.shape[1]):
+                m.Equation(lower[rowidx, colidx]*matches[rowidx, colidx] <= Q_exc_tot[rowidx, colidx])
+                m.Equation(upper[rowidx, colidx]*matches[rowidx, colidx] >= Q_exc_tot[rowidx, colidx])
+        m.Minimize(m.sum(matches))
+        m.options.IMODE = 3 # Steady-state optimization
+        m.options.solver = 1 # APOPT solver
+        m.solver_options = ['minlp_maximum_iterations 500', \
+                            # minlp iterations with integer solution
+                            'minlp_max_iter_with_int_sol 100', \
+                            # treat minlp as nlp
+                            'minlp_as_nlp 0', \
+                            # nlp sub-problem max iterations
+                            'nlp_maximum_iterations 100', \
+                            # 1 = depth first, 2 = breadth first
+                            'minlp_branch_method 1', \
+                            # maximum deviation from whole number
+                            'minlp_integer_tol 0.02', \
+                            # covergence tolerance
+                            'minlp_gap_tol 0.01']
+        m.solve()
+
 
     def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, t_in = None, t_out = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), 
-        exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0):
+        exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0, pressure_unit = unyt.Pa):
 
         # General data validation
         if exchanger_type.casefold() in {'fixed head', 'fixed', 'fixed-head'}:
@@ -482,28 +692,47 @@ class HEN:
 
         # Exchanger calculations
         if pinch.casefold() == 'above' or pinch.casefold() == 'top' or pinch.casefold() == 'up':
+            if self.streams[stream1].t1 < self.streams[stream1].t2: # We want Stream1 to be the hot stream, but it's currently the cold stream
+                stream1, stream2 = stream2, stream1
+                if ref_stream == 1: # Inverting the ref_stream parameter since we inverted the streams
+                    ref_stream = 2
+                else:
+                    ref_stream = 1
+            
             if t_in is not None and t_out is not None: # Operating the exchanger using temperatures
                 if ref_stream == 1: # Temperature values must be referring to only one of the streams - the first stream in this case
-                    heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
+                    heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * (np.abs(t_in - t_out)*self.delta_temp_unit)
                 else:
-                    heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
+                    heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * (np.abs(t_in - t_out)*self.delta_temp_unit)
             elif type(heat) is str and heat.casefold() == 'auto':
-                heat = np.minimum(np.abs(self.streams[stream1].q_above_remaining), np.abs(self.streams[stream2].q_above_remaining)) # Maximum heat exchanged is the minimum total heat between streams
+                if self.streams[stream1].cp * self.streams[stream1].flow_rate >= self.streams[stream2].cp * self.streams[stream2].flow_rate:
+                    heat = np.minimum(self.streams[stream1].q_above_remaining, self.streams[stream2].q_above_remaining) # Maximum heat exchanged is the minimum total heat between streams
+                else: # Can't use all the heat as the hot stream has a lower F*c_P, leading to a ΔT conflict
+                    # Finding a temporary temperature where the heats exchanged are equal, but still respecting ΔT
+                    T_F = (self.streams[stream1].cp * self.streams[stream1].flow_rate * self.streams[stream1].current_t_above.value * self.delta_temp_unit +
+                    self.streams[stream2].cp * self.streams[stream2].flow_rate * (self.delta_t.value + self.streams[stream2].current_t_above.value) * self.delta_temp_unit )
+                    T_F /= self.streams[stream1].cp * self.streams[stream1].flow_rate + self.streams[stream2].cp * self.streams[stream2].flow_rate
+                    heat_temp = self.streams[stream1].cp * self.streams[stream1].flow_rate * (self.streams[stream1].current_t_above.value*self.delta_temp_unit - T_F)
+                    # The heat_temp value can be greater than the minimum total heat of one of the streams, so we must take this into account
+                    heat = np.minimum(self.streams[stream1].q_above_remaining, self.streams[stream2].q_above_remaining)
+                    heat = np.minimum(heat, heat_temp)
             else: # Heat passed was a number, and no temperatures were passed
                 heat = heat * self.streams[stream1].q_above.units
 
-            if self.streams[stream1].q_above_remaining < 0: # We want Stream1 to be the hot stream, but it's currently the cold stream
-                stream1, stream2 = stream2, stream1
             s1_q_above = self.streams[stream1].q_above_remaining - heat
             s1_t_above = self.streams[stream1].current_t_above - heat/(self.streams[stream1].cp * self.streams[stream1].flow_rate)
-            s2_q_above = self.streams[stream2].q_above_remaining + heat
+            s2_q_above = self.streams[stream2].q_above_remaining - heat
             s2_t_above = self.streams[stream2].current_t_above + heat/(self.streams[stream2].cp * self.streams[stream2].flow_rate)
             
             # Data validation
-            if s1_t_above < s2_t_above:
-                raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_above}, while the cold stream is leaving with a temperature of {s2_t_above}')
+            if self.streams[stream1].current_t_above < s2_t_above:
+                raise ValueError(f'Match is thermodynamically impossible, as the hot stream is entering with a temperature of {self.streams[stream1].current_t_above:.4g}, '
+                    f'while the cold stream is leaving with a temperature of {s2_t_above:.4g}')
+            elif s1_t_above < self.streams[stream2].current_t_above:
+                raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_above:.4g}, '
+                    f'while the cold stream is entering with a temperature of {self.streams[stream2].current_t_above:.4g}')
             elif s1_t_above - s2_t_above < self.delta_t:
-                    print(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {s1_t_above-s2_t_above:.4g}")
+                    warnings.warn(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {s1_t_above-s2_t_above:.4g}")
             
             # Recording the data
             delta_T1 = self.streams[stream1].current_t_above - s2_t_above
@@ -514,26 +743,45 @@ class HEN:
             self.streams[stream2].current_t_above = s2_t_above
 
         elif pinch.casefold() == 'below' or pinch.casefold() == 'bottom' or pinch.casefold() == 'bot' or pinch.casefold == 'down':
+            if self.streams[stream1].t1 < self.streams[stream1].t2: # We want Stream1 to be the hot stream, but it's currently the cold stream
+                stream1, stream2 = stream2, stream1
+                if ref_stream == 1: # Inverting the ref_stream parameter since we inverted the streams
+                    ref_stream = 2
+                else:
+                    ref_stream = 1
+
             if t_in is not None and t_out is not None: # Operating the exchanger using temperatures
                 if ref_stream == 1: # Temperature values must be referring to only one of the streams - the first stream in this case
-                    heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
+                    heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * (np.abs(t_in - t_out)*self.delta_temp_unit)
                 else:
-                    heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * ((t_in - t_out)*self.delta_temp_unit)
+                    heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * (np.abs(t_in - t_out)*self.delta_temp_unit)
             elif type(heat) is str and heat.casefold() == 'auto':
-                heat = np.minimum(np.abs(self.streams[stream1].q_below_remaining), np.abs(self.streams[stream2].q_below_remaining)) # Maximum heat exchanged is the minimum total heat between streams
+                if self.streams[stream1].cp * self.streams[stream1].flow_rate <= self.streams[stream2].cp * self.streams[stream2].flow_rate:
+                    heat = np.minimum(self.streams[stream1].q_below_remaining, self.streams[stream2].q_below_remaining) # Maximum heat exchanged is the minimum total heat between streams
+                else: # Can't use all the heat as the hot stream has a lower F*c_P, leading to a ΔT conflict
+                    # Finding a temporary temperature where the heats exchanged are equal, but still respecting ΔT
+                    T_F = (self.streams[stream1].cp * self.streams[stream1].flow_rate * self.streams[stream1].current_t_below.value * self.delta_temp_unit +
+                    self.streams[stream2].cp * self.streams[stream2].flow_rate * (self.delta_t.value + self.streams[stream2].current_t_below.value) * self.delta_temp_unit )
+                    T_F /= self.streams[stream1].cp * self.streams[stream1].flow_rate + self.streams[stream2].cp * self.streams[stream2].flow_rate
+                    heat_temp = self.streams[stream1].cp * self.streams[stream1].flow_rate * (self.streams[stream1].current_t_below.value*self.delta_temp_unit - T_F)
+                    # The heat_temp value can be greater than the minimum total heat of one of the streams, so we must take this into account
+                    heat = np.minimum(self.streams[stream1].q_below_remaining, self.streams[stream2].q_below_remaining)
+                    heat = np.minimum(heat, heat_temp)
             else: # Heat passed was a number, and no temperatures were passed
                 heat = heat * self.streams[stream1].q_above.units
             
-            if self.streams[stream1].q_below_remaining < 0: # We want Stream1 to be the hot stream, but it's currently the cold stream
-                stream1, stream2 = stream2, stream1
             s1_q_below = self.streams[stream1].q_below_remaining - heat
             s1_t_below = self.streams[stream1].current_t_below - heat/(self.streams[stream1].cp * self.streams[stream1].flow_rate)
-            s2_q_below = self.streams[stream2].q_below_remaining + heat
+            s2_q_below = self.streams[stream2].q_below_remaining - heat
             s2_t_below = self.streams[stream2].current_t_below + heat/(self.streams[stream2].cp * self.streams[stream2].flow_rate)
             
             # Data validation
-            if s1_t_below < s2_t_below:
-                raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_below}, while the cold stream is leaving with a temperature of {s2_t_below}')
+            if self.streams[stream1].current_t_below < s2_t_below:
+                raise ValueError(f'Match is thermodynamically impossible, as the hot stream is entering with a temperature of {self.streams[stream1].current_t_below:.4g}, '
+                    f'while the cold stream is leaving with a temperature of {s2_t_below:.4g}')
+            elif s1_t_below < self.streams[stream2].current_t_below:
+                raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_below:.4g}, '
+                    f'while the cold stream is entering with a temperature of {self.streams[stream2].current_t_below:.4g}')
             elif s1_t_below - s2_t_below < self.delta_t:
                     print(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {s1_t_below-s2_t_below:.4g}")
             
@@ -547,22 +795,44 @@ class HEN:
         
         # Creating the exchanger object
         delta_T_lm = (delta_T1.value - delta_T2.value) / (np.log(delta_T1.value/delta_T2.value)) * self.delta_temp_unit
-        self.exchangers[exchanger_name] = HeatExchanger(stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type)
+        pressure = pressure * pressure_unit
+        self.exchangers[exchanger_name] = HeatExchanger(stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type, cost_a, cost_b, pressure)
         
-    def save(self, name):
-        file_name = name + ".p"
+    def save(self, name, overwrite = False):
+        if "." in name:
+            file_name = name
+        else:
+            file_name = name + ".p"
+
+        if not overwrite:
+            while os.path.exists(file_name):
+                word = file_name.split('.')
+                file_name = word[0] + "DUPLICATE." +  word[1]
+            print("The File Name you chose already exists in this directory. Saving as " + file_name + " instead")
+
         pickle.dump(self, open( file_name, "wb" ))
         
     @classmethod
-    def load(cls,file):
+    def load(cls,file = None):
+        if file == None:
+            files = os.listdir()
+            file_list = []
+            for myfile in files:
+                if myfile.endswith('.p'):
+                    file_list.append(myfile)
+            if len(file_list) != 1:
+                raise ValueError('You must supply a file name (with extension) to HEN.load()'+
+            '\n Alternatively, ensure there\'s only one .p file in the working directory')
+            else:
+                file = file_list[0]
         return pickle.load(open(file, 'rb'))
 
 class Stream():
-    def __init__(self, t1, t2, cp, flow_rate, flow_unit, temp_unit, cp_unit):
-        self.t1 = t1 * temp_unit
-        self.t2 = t2 * temp_unit
-        self.cp = cp * cp_unit
-        self.flow_rate = flow_rate * flow_unit
+    def __init__(self, t1, t2, cp, flow_rate):
+        self.t1 = t1
+        self.t2 = t2
+        self.cp = cp
+        self.flow_rate = flow_rate
         self.q_above = None # Will be updated once pinch point is found
         self.q_below = None
 
@@ -581,12 +851,12 @@ class Stream():
         text =(f'{stream_type} stream with T_in = {self.t1} and T_out = {self.t2}\n'
             f'c_p = {self.cp} and flow rate = {self.flow_rate}\n')
         if self.q_above is not None:
-            text += f'Above pinch: {self.q_above} total, {self.q_above_remaining} remaining, T = {self.current_t_above:.4g}\n'
-            text += f'Below pinch: {self.q_below} total, {self.q_below_remaining} remaining, T = {self.current_t_below:.4g}\n'
+            text += f'Above pinch: {self.q_above} total, {self.q_above_remaining:.6g} remaining, T = {self.current_t_above:.4g}\n'
+            text += f'Below pinch: {self.q_below} total, {self.q_below_remaining:.6g} remaining, T = {self.current_t_below:.4g}\n'
         return text
 
 class HeatExchanger():
-    def __init__(self, stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type):
+    def __init__(self, stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type, cost_a, cost_b, pressure):
         self.stream1 = stream1
         self.stream2 = stream2
         self.heat = heat
@@ -595,23 +865,36 @@ class HeatExchanger():
         self.delta_T_lm = delta_T_lm
         self.area = self.heat / (self.U * self.delta_T_lm)
         self.exchanger_type = exchanger_type
+        self.pressure = pressure
 
-        if exchanger_type == 'Fixed Head':
-            self.cost_base = 0
-        elif exchanger_type == 'Floating Head':
-            self.cost_base = 0
+        # Calculating costs
+        Ac = self.area.to('ft**2').value
+        pressure_c = self.pressure.to('psi').value
+        if exchanger_type == 'Floating Head':
+            self.cost_base = np.exp(12.0310) * Ac**(-0.8709) * np.exp(0.09005*np.log(Ac)**2)
+        elif exchanger_type == 'Fixed Head':
+            self.cost_base = np.exp(11.4185) * Ac**(-0.9228) * np.exp(0.09861*np.log(Ac)**2)
         elif exchanger_type == 'U-Tube':
-            self.cost_base = 0
+            self.cost_base = np.exp(11.5510) * Ac**(-0.9186) * np.exp(0.09790*np.log(Ac)**2)
         elif exchanger_type == 'Kettle Vaporizer':
-            self.cost_base = 0
+            self.cost_base = np.exp(12.3310) * Ac**(-0.8709) * np.exp(0.09005*np.log(Ac)**2)
+        Fm = cost_a + (Ac/100)**cost_b
+        if pressure_c > 100:
+            Fp = 0.9803 + 0.018*pressure_c/100 + 0.0017*(pressure_c/100)**2
+        else:
+            Fp = 1
+        self.cost_fob = self.cost_base * Fm * Fp
 
     def __repr__(self):
-        text = (f'A {self.exchanger_type} heat exchanger exchanging {self.heat} between {self.stream1} and {self.stream2} {self.pinch} the pinch\n'
+        text = (f'A {self.exchanger_type} heat exchanger exchanging {self.heat:.6g} between {self.stream1} and {self.stream2} {self.pinch} the pinch\n'
             f'Has a U = {self.U:.4g}, area = {self.area:.4g}, and ΔT_lm = {self.delta_T_lm:.4g}\n'
-            f'Has a base cost of {self.cost_base} and a free on board cost of TBD\n')
+            f'Has a base cost of ${self.cost_base:,.2f} and a free on board cost of ${self.cost_fob:,.2f}\n')
         return text
-     
-## SECTION ? - RUN APPLICATION
+##############################################################################
+# RUN APPLICATION
+##############################################################################
+root = tk.Tk()
+
 if __name__ == '__main__':
-    HEN_app = HENOS_control_panel(root)
+    HENOS = HENOS_app(root)
     root.mainloop()
