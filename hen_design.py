@@ -254,6 +254,7 @@ def create_dropdown_menu(master, options):
 ##############################################################################
 # (Back-End)
 ##############################################################################
+
 class HEN:
     """
     A class that holds streams and exchangers, used to solve HEN problems
@@ -518,6 +519,7 @@ class HEN:
         Notes to self (WIP):
         Equations come from C.A. Floudas, "Nonlinear and Mixed-Integer Optimization", p. 283
         Currently skipping the R_0 = R_K = 0 equation - will see how to best implement this (ul or m.Equation)
+
         self._interval_heats has each stream as its rows and each interval as its columns, such that the topmost interval is the rightmost column
         """
 
