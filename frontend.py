@@ -75,19 +75,19 @@ class HENOS_stream_input(ttk.Frame):
         self.HEN_object = HEN_object
         self.HEN_object_explorer = HEN_object_explorer
         self.HEN_stream_labels = ['Stream Name', 'Inlet Temperature',
-                             'Outlet Temperature', 'Temperature Units',
-                             'Heat Capacity Rate', 'Heat Capacity Rate Units',
-                             'Heat Load', 'Heat Load Units']
+                             'Outlet Temperature', '',
+                             'Heat Capacity', '',
+                             'Flow Rate', '', 'Heat Load', '']
         self.input_entries = {}
         
         # Arrange stream input components
         for row in range(2):
-            for col in range(8):
+            for col in range(10):
                 if row == 0:
                     l = ttk.Label(self, text=self.HEN_stream_labels[col])
                     l.grid(row=row, column=col, padx=10)
                 else:
-                    if col in [0, 1, 2, 4, 6]:
+                    if col in [0, 1, 2, 4, 6, 8]:
                         e = ttk.Entry(self, width=12)
                         e.grid(row=row, column=col)
                         self.input_entries[col] = e
@@ -96,44 +96,74 @@ class HENOS_stream_input(ttk.Frame):
                         m[0].grid(row = row, column=col)
                         self.input_entries[col] = m[1]
                     elif col == 5:
-                        m = create_dropdown_menu(self, ['J/(°C·s)', 'BTU/(°F·s)', 'J/(°K·s)'])
+                        m = create_dropdown_menu(self, ['J/(kg·°C)', 'BTU/(lb·°F)', 'J/(kg·°K)'])
                         m[0].grid(row = row, column=col)
                         self.input_entries[col] = m[1]
                     elif col == 7:
-                        m = create_dropdown_menu(self, ['J', 'kcal', 'BTU'])
+                        m = create_dropdown_menu(self, ['kg/s', 'lb/s'])
+                        m[0].grid(row = row, column=col)
+                        self.input_entries[col] = m[1]
+                    elif col == 9:
+                        m = create_dropdown_menu(self, ['W', 'kcal/s', 'BTU/s'])
                         m[0].grid(row = row, column=col)
                         self.input_entries[col] = m[1]
         
         # Initialize and arrange 'Add Stream' button
         sub_stream = ttk.Button(self, text="Add Stream", command=self.add_stream)
-        sub_stream.grid(row=1, column=8, sticky='nsew')
+        sub_stream.grid(row=1, column=10, sticky='nsew')
     
     def add_stream(self):
         # Populating raw input data vector
         raw_input = []
-        for col in range(8):
+        for col in range(10):
             rawdata = self.input_entries[col].get()
             if rawdata == '': rawdata = None
             raw_input.append(rawdata)
-            if col in [0, 1, 2, 4, 6]:
+            if col in [0, 1, 2, 4, 6, 8]:
                 self.input_entries[col].delete(0, 'end')
         
         print(raw_input)
         
-        # HEN object input data sanitation
-        for ii in [1, 2, 4, 6]:
+        # HEN object input data transfer, convert all numeric values to floats
+        for ii in [1, 2, 4, 6, 8]:
             try:
                 numericdata = float(raw_input[ii])
                 raw_input[ii] = numericdata
             except TypeError:
                 continue
         
-        print(raw_input)
-        
-        #sanInput = ['inlet temperature', 'outlet temperature', 'flow rate', 'heat', 'stream name', 'temperature unit']
+        # Convert temperature unit input to unyt input
+        if raw_input[3] == '°C':
+            raw_input[3] = unyt.degC
+        elif raw_input[3] == '°F':
+            raw_input[3] = unyt.degF
+        else:
+            raw_input[3] = unyt.degK
             
+        # Convert cp unit input to unyt input
+        if raw_input[5] == 'J/(kg·°C)':
+            raw_input[5] = unyt.J/(unyt.delta_degC*unyt.kg)
+        elif raw_input[5] == 'BTU/(lb·°F)':
+            raw_input[5] = unyt.BTU/(unyt.delta_degF*unyt.lb)
+        else:
+            raw_input[5] = unyt.J/(unyt.delta_degK*unyt.kg)
+        
+        # Convert flow rate unit input to unyt input
+        if raw_input[7] == 'kg/s':
+            raw_input[7] = unyt.kg/unyt.s
+        else:
+            raw_input[7] = unyt.lb/unyt.s
+        
+        # Convert heat load unit input to unyt input
+        if raw_input[9] == 'W':
+            raw_input[9] = unyt.W
+        elif raw_input[9] == 'kcal/s':
+            raw_input[9] = unyt.kcal/unyt.s
+        else:
+            raw_input[9] = unyt.BTU/unyt.s
+        
         # Add input to HEN object and data display
-        self.HEN_object.add_stream(t1 = raw_input[1], t2 = raw_input[2], cp = raw_input[4], heat = raw_input[6], stream_name = raw_input[0], HENOS_oe_tree = self.HEN_object_explorer.objectExplorer)
+        self.HEN_object.add_stream(t1 = raw_input[1], t2 = raw_input[2], cp = raw_input[4], heat = raw_input[6], stream_name = raw_input[0], HENOS_oe_tree = self.HEN_object_explorer.objectExplorer, temp_unit = raw_input[3])
     
 
 class HENOS_object_explorer(ttk.Frame):
