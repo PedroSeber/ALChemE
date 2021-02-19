@@ -83,8 +83,11 @@ class HENOS_stream_input(ttk.Frame):
         # Arrange stream input components
         for row in range(2):
             for col in range(10):
-                if row == 0:
+                if row == 0 and col in [0, 1, 2, 4, 6, 8]:
                     l = ttk.Label(self, text=self.HEN_stream_labels[col])
+                    l.grid(row=row, column=col, padx=10)
+                elif row ==0 and col in [3, 5, 7, 9]:
+                    l = ttk.Label(self, width=12)
                     l.grid(row=row, column=col, padx=10)
                 else:
                     if col in [0, 1, 2, 4, 6, 8]:
@@ -233,23 +236,42 @@ class HENOS_objE_tree(ttk.Treeview):
         self.configure(yscrollcommand=self.verscrlbar.set)
         
         # Intialize object classes in treeview
-        self.StreamNode = self.insert('', index=0, iid=0, text='STREAMS', values=('Inlet Temperature', 'Outlet Temperature', 'Heat Capacity Rate', 'Heat Load'))
+        self.StreamNode = self.insert('', index=0, iid=0, text='STREAMS', values=('Inlet Temperature', 'Outlet Temperature', 'Heat Capacity Rate', 'Heat Load', 'Status'))
         self.HXNode = self.insert('', index=1, iid=1, text='HEAT EXCHANGERS')
         self.UtilityNode = self.insert('', index=2, iid=2, text='UTILITIES')
         
         # Initialize 'Double Click' Event
-        self.bind("<Double-1>", self.send2screen)
+        self.bind("<Button-1>", self.send2screen)
         
     def receive_new_stream(self, oeDataVector):
-        self.insert(self.StreamNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), str(oeDataVector[2]), str(oeDataVector[3])))
+        self.insert(self.StreamNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), str(oeDataVector[2]), str(oeDataVector[3]), 'Active'))
         
     def delete_item(self):
-        selected_item  = self.selection()[0]
-        self.delete(selected_item)
+        HEN_selectedObject  = self.selection()[0]
+        #HEN_sO_name = self.item(HEN_selectedObject, 'text')
+        self.delete(HEN_selectedObject)
+        
+    def activate_deactivate_stream(self):
+        HEN_selectedObject = self.selection()
+        print(type(HEN_selectedObject))
+        
+        for stream in HEN_selectedObject:
+            HEN_sO_name = self.item(stream, 'text')
+            HEN_sO_status = self.item(stream, 'values')[-1]
+        
+            if HEN_sO_status == 'Active':
+                self.HEN_object.inactivate_stream(HEN_sO_name)
+                objValues = self.item(stream, 'values')[0:-1]
+                self.insert(self.StreamNode, self.index(stream), text=HEN_sO_name, values=(objValues[0],objValues[1], objValues[2],'Inactive'))
+                self.delete(stream)
+            elif HEN_sO_status == 'Inactive':
+                self.HEN_object.activate_stream(HEN_sO_name)
+                objValues = self.item(stream, 'values')[0:-1]
+                self.insert(self.StreamNode, self.index(stream), text=HEN_sO_name, values=(objValues[0],objValues[1], objValues[2],'Active'))
+                self.delete(stream)
         
     def send2screen(self, event):
         HEN_selectedObject = self.identify('item',event.x, event.y)
-        print(HEN_selectedObject)
         HEN_sO_name = self.item(HEN_selectedObject, 'text')
         self.master.objectVisualizer.print2screen(HEN_sO_name)
         
@@ -262,9 +284,11 @@ class HENOS_object_explorer_controls(ttk.Frame):
         
         # Delete streams button
         delete_stream = ttk.Button(self, text='Delete Stream', command=object_explorer.objectExplorer.delete_item)
+        activate_deactivate_stream = ttk.Button(self, text='Activate/Deactivate Stream', command=object_explorer.objectExplorer.activate_deactivate_stream)
         
-        delete_stream.grid(row=0, column=0)
-        
+        # Place Buttons
+        delete_stream.grid(row=0, column=0, pady=15)
+        activate_deactivate_stream.grid(row=1, column=0,pady=15)
 
 # FUNCTIONS
 def create_dropdown_menu(master, options):
