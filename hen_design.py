@@ -283,9 +283,9 @@ class HEN:
 
         # Adding the pinch point
         if self.first_utility_loc + 2 <= len(self._plotted_ylines):
-            ax1.axhline(self.first_utility_loc, color = 'k', linewidth = 0.5)
+            ax1.axhline(len(self._plotted_ylines)-self.first_utility_loc-2, color = 'k', linewidth = 0.5) # Xth interval but (X-1)th line, that's why we need a -2
             if show_temperatures:
-                ax1.text(np.mean(ax1.get_xlim()), self.first_utility_loc - 0.01, 'Pinch Point', ha = 'center', va = 'top')
+                ax1.text(np.mean(ax1.get_xlim()), len(self._plotted_ylines)-self.first_utility_loc-2 - 0.01, 'Pinch Point', ha = 'center', va = 'top')
         
         plt.show(block = False)
         #if tab_control: # Embed into GUI
