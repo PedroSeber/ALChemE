@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import unyt
-from collections import namedtuple, OrderedDict
+from collections import OrderedDict
 import pdb
 import os
 import pickle
@@ -164,9 +164,9 @@ class HEN:
         tmp2 = np.atleast_2d(np.min(temperatures[~self.hot_streams, :], axis = 1)).T <= np.atleast_2d(self._plotted_ylines[:-1] - self.delta_t.value)
         streams_in_interval2 = (tmp1 & tmp2).astype(np.int8)
         delta_plotted_ylines = self._plotted_ylines[1:] - self._plotted_ylines[:-1]
-        enthalpy_hot = np.sum(streams_in_interval1 * cp_vals[self.hot_streams] * delta_plotted_ylines, axis = 0) # sum(FCp_hot) * delta_t
-        enthalpy_cold = np.sum(streams_in_interval2 * cp_vals[~self.hot_streams] * delta_plotted_ylines, axis = 0) # sum(FCp_cold) * delta_t
-        q_interval = enthalpy_hot - enthalpy_cold # sum(FCp_hot - FCp_cold) * delta_t_interval
+        enthalpy_hot = np.sum(streams_in_interval1 * cp_vals[self.hot_streams] * delta_plotted_ylines, axis = 0) # sum(FCp_hot) * ΔT
+        enthalpy_cold = np.sum(streams_in_interval2 * cp_vals[~self.hot_streams] * delta_plotted_ylines, axis = 0) # sum(FCp_cold) * ΔT
+        q_interval = enthalpy_hot - enthalpy_cold # sum(FCp_hot - FCp_cold) * ΔT_interval
         
         
         q_interval = q_interval[::-1] # Flipping the heat array so it starts from the top
@@ -226,7 +226,12 @@ class HEN:
 
         for idx, values in enumerate(self.streams.items()): # values[0] has the stream names, values[1] has the properties
             if values[1].active: # Checks whether stream is active
-                temperatures[idx, 0], temperatures[idx, 1] = values[1].t1.value, values[1].t2.value
+                if values[1].t1 > values[1].t2: # Hot stream
+                    temperatures[idx, 0] = self._plotted_ylines.searchsorted(values[1].t1) # Conversion from temperature to an index; used to plot equidistant lines
+                    temperatures[idx, 1] = self._plotted_ylines.searchsorted(values[1].t2)
+                else: # Cold stream
+                    temperatures[idx, 0] = self._plotted_ylines.searchsorted(values[1].t1 + self.delta_t) # Need to add ΔT 
+                    temperatures[idx, 1] = self._plotted_ylines.searchsorted(values[1].t2 + self.delta_t)
                 cp_vals[idx, 0] = values[1].cp.value
                 x_tick_labels[idx] = values[0]
             else:
@@ -236,11 +241,9 @@ class HEN:
         # Plotting the temperature graphs
         fig1, ax1 = plt.subplots(dpi = 350)
         ax1.set_title('Temperature Interval Diagram')
-        axis_delta = max(self.delta_t.value, 20) # Shifts the y-axis by at least 20 degrees
         ax1.set_xlim(-0.5, len(temperatures)-0.5)
-        ax1.set_ylim(np.min(temperatures) - axis_delta, np.max(temperatures) + axis_delta)
-        ax1.set_ylabel(f'Hot temperatures ({self.temp_unit})')
-        ax1.set_yticks(np.linspace(np.min(temperatures) - axis_delta, np.max(temperatures) + axis_delta, 11))
+        ax1.set_ylim(-0.5, len(self._plotted_ylines)-0.5)
+        ax1.set_yticks([])
         q_above_text_loc = ax1.get_ylim()[1] - 0.01*(ax1.get_ylim()[1] - ax1.get_ylim()[0])
         q_below_text_loc = ax1.get_ylim()[0] + 0.04*(ax1.get_ylim()[1] - ax1.get_ylim()[0])
         cp_text_loc = ax1.get_ylim()[0] + 0.01*(ax1.get_ylim()[1] - ax1.get_ylim()[0])
@@ -251,16 +254,12 @@ class HEN:
             if temperatures[idx, 0] > temperatures[idx, 1]:
                 my_color = 'r'
                 my_marker = 'v'
-                tplot1 = temperatures[idx, 0]
-                tplot2 = temperatures[idx, 1]
             else:
                 my_color = 'b'
                 my_marker = '^'
-                tplot1 = temperatures[idx, 0] + self.delta_t.value
-                tplot2 = temperatures[idx, 1] + self.delta_t.value
 
-            ax1.vlines(idx, tplot1, tplot2, color = my_color, linewidth = 0.25) # Vertical line for each stream
-            ax1.plot(idx, tplot2, color = my_color, marker = my_marker, markersize = 1) # Marker at the end of each vertical line
+            ax1.vlines(idx, temperatures[idx, 0], temperatures[idx, 1], color = my_color, linewidth = 0.25) # Vertical line for each stream
+            ax1.plot(idx, temperatures[idx, 1], color = my_color, marker = my_marker, markersize = 1) # Marker at the end of each vertical line
             if show_properties:
                 q_above_text = r'$Q_{Top}$ = %g %s' % (self.streams[x_tick_labels[idx]].q_above, self.heat_unit)
                 ax1.text(idx, q_above_text_loc, q_above_text, ha = 'center', va = 'top') # Heat above the pinch point
@@ -270,13 +269,13 @@ class HEN:
                 ax1.text(idx, cp_text_loc, cp_text, ha = 'center', va = 'bottom') # Heat below the pinch point
         
         # Horizontal lines for each temperature
-        for elem in self._plotted_ylines:
-            ax1.axhline(elem, color = 'k', linewidth = 0.25)
+        for idx, elem in enumerate(self._plotted_ylines):
+            ax1.axhline(idx, color = 'k', linewidth = 0.25)
             if show_temperatures:
                 my_label1 = str(elem) + str(self.temp_unit) + '               ' # Extra spaces are used to pseudo-center the text
                 my_label2 = '               ' + str(elem - self.delta_t.value) + str(self.temp_unit)
-                ax1.text(np.mean(ax1.get_xlim()), elem, my_label1, ha = 'center', va = 'bottom', c = 'red')
-                ax1.text(np.mean(ax1.get_xlim()), elem, my_label2, ha = 'center', va = 'bottom', c = 'blue')
+                ax1.text(np.mean(ax1.get_xlim()), idx, my_label1, ha = 'center', va = 'bottom', c = 'red')
+                ax1.text(np.mean(ax1.get_xlim()), idx, my_label2, ha = 'center', va = 'bottom', c = 'blue')
         
         # Labeling the x-axis with the stream names
         ax1.set_xticks(range(len(temperatures)))
@@ -284,9 +283,9 @@ class HEN:
 
         # Adding the pinch point
         if self.first_utility_loc + 2 <= len(self._plotted_ylines):
-            ax1.axhline(self._plotted_ylines[-2-self.first_utility_loc], color = 'k', linewidth = 0.5) # Arrays start at 0 but end at -1, so we need an extra -1 in this line and the next
+            ax1.axhline(self.first_utility_loc, color = 'k', linewidth = 0.5)
             if show_temperatures:
-                ax1.text(np.mean(ax1.get_xlim()), self._plotted_ylines[-2-self.first_utility_loc] - 1, 'Pinch Point', ha = 'center', va = 'top')
+                ax1.text(np.mean(ax1.get_xlim()), self.first_utility_loc - 0.01, 'Pinch Point', ha = 'center', va = 'top')
         
         plt.show(block = False)
         #if tab_control: # Embed into GUI
