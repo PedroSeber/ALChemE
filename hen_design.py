@@ -2,6 +2,7 @@
 # IMPORT CALLS
 ##############################################################################
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import unyt
 from collections import namedtuple, OrderedDict
@@ -466,7 +467,47 @@ class HEN:
                             # covergence tolerance
                             'minlp_gap_tol 0.01']
         m.solve()
-        m.open_folder()
+
+        # Saving the results to variables (for ease of access)
+        results = m.load_results()
+        Y_results = np.zeros_like(matches, dtype = np.int8)
+        Q_tot_results = np.zeros_like(Q_exc_tot, dtype = np.float)
+        rowidx, colidx = 0, 0
+        for elem in results: # Adding to both matrices in one loop
+            if elem.startswith('q_tot'): # Adding Q_tot first since it comes first
+                Q_tot_results[rowidx, colidx] = results[elem][0]
+                colidx += 1
+                if colidx == Q_tot_results.shape[1]:
+                    colidx = 0
+                    rowidx += 1
+                if rowidx == Q_tot_results.shape[0]: # Resetting so we can add matches
+                    rowidx = 0
+            elif elem.startswith('int_y'): # Adding matches
+                Y_results[rowidx, colidx] = results[elem][0]
+                colidx += 1
+                if colidx == Y_results.shape[1]:
+                    colidx = 0
+                    rowidx += 1
+        
+        # Generating names to be used in a Pandas DataFrame with the results
+        row_names = np.zeros((np.sum(self.hot_streams) + self.hot_utilities), dtype = np.object)
+        col_names = np.zeros((np.sum(~self.hot_streams) + self.cold_utilities), dtype = np.object)
+        # TODO: Utility names go here
+        col_names[0] = 'CU1'
+        idx = 0
+        rowidx, colidx = self.hot_utilities, self.cold_utilities
+        for idx, elem in enumerate(self.streams):
+            if self.hot_streams[idx] and self.streams[elem].active:
+                row_names[rowidx] = elem
+                rowidx += 1
+            elif not self.hot_streams[idx] and self.streams[elem].active:
+                col_names[colidx] = elem
+                colidx += 1
+            else: # Inactive stream
+                idx -= 1
+        Y_results = pd.DataFrame(Y_results, row_names, col_names)
+        Q_tot_results = pd.DataFrame(Q_tot_results, row_names, col_names)
+        return Y_results, Q_tot_results
 
 
     def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, t_in = None, t_out = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), 
