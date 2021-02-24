@@ -8,6 +8,8 @@ from collections import namedtuple, OrderedDict
 import tkinter as tk
 from tkinter import ttk
 from hen_design import HEN
+from hen_design import generate_GUI_plot
+import subprocess
 
 # CLASSES
 class HENOS_app():
@@ -40,6 +42,7 @@ class HENOS_app():
         self.fileMenu.add_command(label='Save')
         self.fileMenu.add_command(label='Save As')
         self.HENOS_dropdown_menu.add_cascade(label='File', menu=self.fileMenu)
+        self.HENOS_dropdown_menu.add_cascade(label='Settings')
         
         # Intialize control panel
         control_panel_Tab = ttk.Frame(self.tabControl)
@@ -135,13 +138,17 @@ class HENOS_stream_input(ttk.Frame):
             except TypeError:
                 continue
         
+        # Check if flow_rate = None, convert to 1 if so
+        if raw_input[6] == None:
+            raw_input[6] = 1
+        
         # Convert temperature unit input to unyt input
         if raw_input[3] == '°C':
-            raw_input[3] = unyt.degC
+            self.temp_unit = unyt.degC
         elif raw_input[3] == '°F':
-            raw_input[3] = unyt.degF
+            self.temp_unit = unyt.degF
         else:
-            raw_input[3] = unyt.degK
+            self.temp_unit = unyt.degK
             
         # Convert cp unit input to unyt input
         if raw_input[5] == 'J/(kg·°C)':
@@ -166,7 +173,7 @@ class HENOS_stream_input(ttk.Frame):
             raw_input[9] = unyt.BTU/unyt.s
         
         # Add input to HEN object and data display
-        self.HEN_object.add_stream(t1 = raw_input[1], t2 = raw_input[2], cp = raw_input[4], heat = raw_input[6], stream_name = raw_input[0], HENOS_oe_tree = self.HEN_object_explorer.objectExplorer, temp_unit = raw_input[3])
+        self.HEN_object.add_stream(t1 = raw_input[1], t2 = raw_input[2], cp = raw_input[4], flow_rate = raw_input[6], heat = raw_input[8], stream_name = raw_input[0], HENOS_oe_tree = self.HEN_object_explorer.objectExplorer, temp_unit = self.temp_unit)
     
 
 class HENOS_object_explorer(ttk.Frame):
@@ -225,6 +232,11 @@ class HENOS_objE_tree(ttk.Treeview):
         style = ttk.Style()
         style.layout("Treeview", [('Treeview.treearea', {'sticky': 'nswe'})])
         self['columns'] = ('1', '2', '3', '4', '5')
+        self.column('1', width=170)
+        self.column('2', width=170)
+        self.column('3', width=170)
+        self.column('4', width=170)
+        self.column('5', width=170)
         
         # Defining variables
         self.HEN_object = HEN_object
@@ -240,11 +252,11 @@ class HENOS_objE_tree(ttk.Treeview):
         self.HXNode = self.insert('', index=1, iid=1, text='HEAT EXCHANGERS')
         self.UtilityNode = self.insert('', index=2, iid=2, text='UTILITIES')
         
-        # Initialize 'Double Click' Event
+        # Initialize 'Single Click' Event (Show Selected Object in Object Explorer)
         self.bind("<Button-1>", self.send2screen)
         
     def receive_new_stream(self, oeDataVector):
-        self.insert(self.StreamNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), str(oeDataVector[2]), str(oeDataVector[3]), 'Active'))
+        self.insert(self.StreamNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), str(oeDataVector[2]), str(oeDataVector[3]), str(oeDataVector[4]), 'Active'))
         
     def delete_item(self):
         HEN_selectedObject  = self.selection()[0]
@@ -262,12 +274,12 @@ class HENOS_objE_tree(ttk.Treeview):
             if HEN_sO_status == 'Active':
                 self.HEN_object.inactivate_stream(HEN_sO_name)
                 objValues = self.item(stream, 'values')[0:-1]
-                self.insert(self.StreamNode, self.index(stream), text=HEN_sO_name, values=(objValues[0],objValues[1], objValues[2],'Inactive'))
+                self.insert(self.StreamNode, self.index(stream), text=HEN_sO_name, values=(objValues[0],objValues[1], objValues[2], objValues[3], 'Inactive'))
                 self.delete(stream)
             elif HEN_sO_status == 'Inactive':
                 self.HEN_object.activate_stream(HEN_sO_name)
                 objValues = self.item(stream, 'values')[0:-1]
-                self.insert(self.StreamNode, self.index(stream), text=HEN_sO_name, values=(objValues[0],objValues[1], objValues[2],'Active'))
+                self.insert(self.StreamNode, self.index(stream), text=HEN_sO_name, values=(objValues[0],objValues[1], objValues[2], objValues[3], 'Active'))
                 self.delete(stream)
         
     def send2screen(self, event):
