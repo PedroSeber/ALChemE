@@ -223,13 +223,13 @@ class HENOS_objE_display(tk.Text):
     
     def print2screen(self, object_name):
         if object_name not in ['STREAMS', 'HEAT EXCHANGERS', 'UTILITIES']:
-            self.config(state='normal')
+            #self.config(state='normal')
             commandtext = str('displaying object ' + object_name + '...\n')
             self.insert('end', commandtext)
             displaytext = str(self.HEN_object.streams[object_name])
             self.insert('end', displaytext + '\n\n')
             self.insert('end', '>>> ')
-            self.config(state='disabled')
+            #self.config(state='disabled')
 
 class HENOS_objE_tree(ttk.Treeview):
     '''
@@ -238,7 +238,7 @@ class HENOS_objE_tree(ttk.Treeview):
     '''
     def __init__(self, master, HEN_object):
         # Initialize treeview properties
-        ttk.Treeview.__init__(self, master, show='tree')
+        ttk.Treeview.__init__(self, master, show='tree', selectmode='none')
         style = ttk.Style()
         style.layout("Treeview", [('Treeview.treearea', {'sticky': 'nswe'})])
         self['columns'] = ('1', '2', '3', '4', '5')
@@ -264,9 +264,17 @@ class HENOS_objE_tree(ttk.Treeview):
         
         # Initialize 'Single Click' Event (Show Selected Object in Object Explorer)
         self.bind("<Button-1>", self.send2screen)
+    
+    def on_click(self, event):
+        tree = event.widget
+        item_name = tree.identify_row(event.y)
+        if item_name:
+            tags = tree.item(item_name, 'tags')
+            if tags and (tags[0] == 'selectable'):
+                tree.selection_set(item_name)
         
     def receive_new_stream(self, oeDataVector):
-        self.insert(self.StreamNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), str(oeDataVector[2]), str(oeDataVector[3]), str(oeDataVector[4]), 'Active'))
+        self.insert(self.StreamNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), str(oeDataVector[2]), str(oeDataVector[3]), str(oeDataVector[4]), 'Active'), tags='selectable')
         
     def delete_item(self):
         HEN_selectedObject  = self.selection()[0]
@@ -293,6 +301,7 @@ class HENOS_objE_tree(ttk.Treeview):
                 self.delete(stream)
         
     def send2screen(self, event):
+        self.on_click(event)
         HEN_selectedObject = self.identify('item',event.x, event.y)
         HEN_sO_name = self.item(HEN_selectedObject, 'text')
         self.master.objectVisualizer.print2screen(HEN_sO_name)
