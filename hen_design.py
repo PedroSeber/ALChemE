@@ -4,6 +4,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import unyt
+from tkinter import ttk
+from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
 from collections import namedtuple, OrderedDict
 import pdb
 import os
@@ -23,6 +25,8 @@ class HEN:
         self.temp_unit = temp_unit
         self.cp_unit = cp_unit
         self.streams = OrderedDict()
+        self.inactive_hot_streams = 0
+        self.inactive_cold_streams = 0
         self.exchangers = OrderedDict()
 
         # Making unyt work since it doesn't like multiplying with °C and °F
@@ -83,21 +87,74 @@ class HEN:
 
         self.streams[stream_name] = Stream(t1, t2, cp, flow_rate)
         if HENOS_oe_tree is not None:
-            oeDataVector = [stream_name, t1, t2, flow_rate]
+            temp_diff = t2 - t1
+            temp_diff = temp_diff.tolist() * self.delta_temp_unit
+            oeDataVector = [stream_name, t1, t2, cp*flow_rate, cp*flow_rate*temp_diff]
+            print(oeDataVector)
             HENOS_oe_tree.receive_new_stream(oeDataVector)
 
+    def activate_stream(self, streams_to_change):
+        if isinstance(streams_to_change, str): # Only one stream name was passed
+            if not self.streams[streams_to_change].active:
+                self.streams[streams_to_change].active = True
+                if self.streams[streams_to_change].t1 > self.streams[streams_to_change].t2:
+                    self.inactive_hot_streams -= 1
+                else:
+                    self.inactive_cold_streams -= 1
+            else:
+                raise ValueError(f'Stream {streams_to_change} is already inactive')
+        elif isinstance(streams_to_change, (list, tuple, set)): # A container of stream names was passed
+            for elem in streams_to_change:
+                if not self.streams[elem].active:
+                    self.streams[elem].active = True
+                    if self.streams[elem].t1 > self.streams[elem].t2:
+                        self.inactive_hot_streams -= 1
+                    else:
+                        self.inactive_cold_streams -= 1
+                else:
+                    warnings.warn(f'Stream {elem} is already inactive. Ignoring this input and continuing')
+        else:
+            raise TypeError('The streams_to_change parameter should be a string or list/tuple/set of strings')
+    
+    def inactivate_stream(self, streams_to_change):
+        if isinstance(streams_to_change, str): # Only one stream name was passed
+            if self.streams[streams_to_change].active:
+                self.streams[streams_to_change].active = False
+                if self.streams[streams_to_change].t1 > self.streams[streams_to_change].t2:
+                    self.inactive_hot_streams += 1
+                else:
+                    self.inactive_cold_streams += 1
+            else:
+                raise ValueError(f'Stream {streams_to_change} is already active')
+        elif isinstance(streams_to_change, (list, tuple, set)): # A container of stream names was passed
+            for elem in streams_to_change:
+                if self.streams[elem].active:
+                    self.streams[elem].active = False
+                    if self.streams[elem].t1 > self.streams[elem].t2:
+                        self.inactive_hot_streams += 1
+                    else:
+                        self.inactive_cold_streams += 1
+                else:
+                    warnings.warn(f'Stream {elem} is already active. Ignoring this input and continuing')
+        else:
+            raise TypeError('The streams_to_change parameter should be a string or list/tuple/set of strings')
+
+    
     def get_parameters(self):
         """
         This function obtains parameters (enthalpies, pinch temperature, heats above / below pinch) for the streams associated with this HEN object.
         """
 
         # Starting array from class data
-        temperatures = np.empty( (len(self.streams), 2) )
-        cp_vals = np.empty( (len(self.streams), 1) )
+        temperatures = np.empty( (len(self.streams) - self.inactive_hot_streams - self.inactive_cold_streams, 2) )
+        cp_vals = np.empty( (len(self.streams) - self.inactive_hot_streams - self.inactive_cold_streams, 1) )
 
         for idx, values in enumerate(self.streams.items()): # values[0] has the stream names, values[1] has the properties
-            temperatures[idx, 0], temperatures[idx, 1] = values[1].t1, values[1].t2
-            cp_vals[idx, 0] = values[1].cp * values[1].flow_rate
+            if values[1].active: # Checks whether stream is active
+                temperatures[idx, 0], temperatures[idx, 1] = values[1].t1, values[1].t2
+                cp_vals[idx, 0] = values[1].cp * values[1].flow_rate
+            else:
+                idx -= 1
         
         self.hot_streams = temperatures[:, 0] > temperatures[:, 1]
         plotted_ylines = np.concatenate((temperatures[self.hot_streams, :].flatten(), temperatures[~self.hot_streams, :].flatten() + self.delta_t.value))
@@ -137,21 +194,24 @@ class HEN:
         print('The last utility is %g %s\n' % (self.last_utility, self.last_utility.units))
 
         # Getting heats above / below pinch for each stream
-        streams_in_interval = np.zeros((len(self.streams), len(delta_plotted_ylines)), dtype = np.int8)
+        streams_in_interval = np.zeros((len(self.streams) - self.inactive_hot_streams - self.inactive_cold_streams, len(delta_plotted_ylines)), dtype = np.int8)
         streams_in_interval[self.hot_streams, :] = streams_in_interval1
         streams_in_interval[~self.hot_streams, :] = streams_in_interval2
         self._interval_heats = streams_in_interval * cp_vals * delta_plotted_ylines
         q_above = np.sum(self._interval_heats[:, -1-self.first_utility_loc:], axis = 1)
         q_below = np.sum(self._interval_heats[:, :-1-self.first_utility_loc], axis = 1)
         for idx, elem in enumerate(self.streams):
-            self.streams[elem].q_above = q_above[idx] * self.first_utility.units
-            self.streams[elem].q_above_remaining = q_above[idx] * self.first_utility.units
-            self.streams[elem].q_below = q_below[idx] * self.first_utility.units
-            self.streams[elem].q_below_remaining = q_below[idx] * self.first_utility.units
-            if self.streams[elem].current_t_above is None:
-                self.streams[elem].current_t_above = self._plotted_ylines[self.first_utility_loc] * self.temp_unit - self.delta_t # Shifting the cold temperature by delta T
-            elif self.streams[elem].current_t_below is None:
-                self.streams[elem].current_t_below = self._plotted_ylines[self.first_utility_loc] * self.temp_unit
+            if self.streams[elem].active:
+                self.streams[elem].q_above = q_above[idx] * self.first_utility.units
+                self.streams[elem].q_above_remaining = q_above[idx] * self.first_utility.units
+                self.streams[elem].q_below = q_below[idx] * self.first_utility.units
+                self.streams[elem].q_below_remaining = q_below[idx] * self.first_utility.units
+                if self.streams[elem].current_t_above is None:
+                    self.streams[elem].current_t_above = self._plotted_ylines[self.first_utility_loc] * self.temp_unit - self.delta_t # Shifting the cold temperature by delta T
+                elif self.streams[elem].current_t_below is None:
+                    self.streams[elem].current_t_below = self._plotted_ylines[self.first_utility_loc] * self.temp_unit
+            else:
+                idx -= 1
 
     def make_tid(self, show_temperatures = True, show_properties = True, tab_control = None):
         """
@@ -164,14 +224,17 @@ class HEN:
         plt.rcParams['font.size'] = 3
 
         # Starting array from class data
-        temperatures = np.empty( (len(self.streams), 2) )
-        cp_vals = np.empty( (len(self.streams), 1) )
+        temperatures = np.empty( (len(self.streams) - self.inactive_hot_streams - self.inactive_cold_streams, 2) )
+        cp_vals = np.empty( (len(self.streams) - self.inactive_hot_streams - self.inactive_cold_streams, 1) )
         x_tick_labels = np.empty(len(temperatures), dtype = 'object') # The names of the streams
 
         for idx, values in enumerate(self.streams.items()): # values[0] has the stream names, values[1] has the properties
-            temperatures[idx, 0], temperatures[idx, 1] = values[1].t1.value, values[1].t2.value
-            cp_vals[idx, 0] = values[1].cp.value
-            x_tick_labels[idx] = values[0]
+            if values[1].active: # Checks whether stream is active
+                temperatures[idx, 0], temperatures[idx, 1] = values[1].t1.value, values[1].t2.value
+                cp_vals[idx, 0] = values[1].cp.value
+                x_tick_labels[idx] = values[0]
+            else:
+                idx -= 1
 
 
         # Plotting the temperature graphs
@@ -203,11 +266,11 @@ class HEN:
             ax1.vlines(idx, tplot1, tplot2, color = my_color, linewidth = 0.25) # Vertical line for each stream
             ax1.plot(idx, tplot2, color = my_color, marker = my_marker, markersize = 1) # Marker at the end of each vertical line
             if show_properties:
-                q_above_text = r'$Q_{Top}$ = %g %s' % (self.streams[x_tick_labels[idx]].q_above, self.streams[x_tick_labels[idx]].q_above.units)
+                q_above_text = r'$Q_{Top}$ = %g %s' % (self.streams[x_tick_labels[idx]].q_above, self.heat_unit)
                 ax1.text(idx, q_above_text_loc, q_above_text, ha = 'center', va = 'top') # Heat above the pinch point
-                q_below_text = r'$Q_{Bot}$ = %g %s' % (self.streams[x_tick_labels[idx]].q_below, self.streams[x_tick_labels[idx]].q_below.units)
+                q_below_text = r'$Q_{Bot}$ = %g %s' % (self.streams[x_tick_labels[idx]].q_below, self.heat_unit)
                 ax1.text(idx, q_below_text_loc, q_below_text, ha = 'center', va = 'bottom') # Heat below the pinch point
-                cp_text = r'$C_p$ = %g %s' % (self.streams[x_tick_labels[idx]].cp, self.streams[x_tick_labels[idx]].cp.units)
+                cp_text = r'$Fc_p$ = %g %s' % (cp_vals[idx], self.cp_unit * self.flow_unit)
                 ax1.text(idx, cp_text_loc, cp_text, ha = 'center', va = 'bottom') # Heat below the pinch point
         
         # Horizontal lines for each temperature
@@ -230,8 +293,8 @@ class HEN:
                 ax1.text(np.mean(ax1.get_xlim()), self._plotted_ylines[-2-self.first_utility_loc] - 1, 'Pinch Point', ha = 'center', va = 'top')
         
         plt.show(block = False)
-        #if tab_control: # Embed into GUI
-         #   generate_GUI_plot(fig1, tab_control, 'Temperature Interval Diagram')
+        if tab_control: # Embed into GUI
+            generate_GUI_plot(fig1, tab_control, 'Temperature Interval Diagram')
 
     def make_cc(self, tab_control = None):
         plt.rcParams['axes.titlesize'] = 5
@@ -262,8 +325,8 @@ class HEN:
         ax2.text(overlap_text_loc, top_text_loc, overlap_text, ha = 'center', va = 'top')
 
         plt.show(block = False)
-        #if tab_control: # Embed into GUI
-        #    generate_GUI_plot(fig2, tab_control, 'Composite Curve')
+        if tab_control: # Embed into GUI
+            generate_GUI_plot(fig2, tab_control, 'Composite Curve')
 
         """ TODO: remove whitespace around the graphs
         ax = gca;
@@ -275,7 +338,6 @@ class HEN:
         """
         Notes to self (WIP):
         Equations come from C.A. Floudas, "Nonlinear and Mixed-Integer Optimization", p. 283
-
         self._interval_heats has each stream as its rows and each interval as its columns, such that the topmost interval is the rightmost column
         """
 
@@ -582,6 +644,7 @@ class Stream():
         self.flow_rate = flow_rate
         self.q_above = None # Will be updated once pinch point is found
         self.q_below = None
+        self.active = True
 
         if self.t1 > self.t2: # Hot stream
             self.current_t_above = self.t1
@@ -637,3 +700,17 @@ class HeatExchanger():
             f'Has a U = {self.U:.4g}, area = {self.area:.4g}, and ΔT_lm = {self.delta_T_lm:.4g}\n'
             f'Has a base cost of ${self.cost_base:,.2f} and a free on board cost of ${self.cost_fob:,.2f}\n')
         return text
+
+
+# UTILITY FUNCTIONS
+def generate_GUI_plot(plot, tabControl, tab_name):
+    """
+    A function which generates a relevant model plot onto the GUI
+    """
+    new_tab = ttk.Frame(tabControl)
+    tabControl.add(new_tab, text=tab_name)
+    tabControl.pack(expand=1, fill='both')
+    new_canvas = FigureCanvasTkAgg(plot, master=new_tab)
+    new_canvas.draw()
+
+    new_canvas.get_tk_widget().pack()
