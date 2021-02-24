@@ -206,7 +206,7 @@ class HENOS_object_explorer(ttk.Frame):
 class HENOS_objE_display(tk.Text):
     def __init__(self, master, HEN_object):
         # Initialize text properties
-        tk.Text.__init__(self, master)
+        tk.Text.__init__(self, master, highlightthickness=0)
         
         # Defining variables
         self.HEN_object = HEN_object
@@ -216,10 +216,20 @@ class HENOS_objE_display(tk.Text):
         self.verscrlbar.pack(side='right', fill='y')
         self.configure(yscrollcommand=self.verscrlbar.set)
     
+        # Initialize >>>
+        self.insert('end', '-'*54 + '***INITIALIZED***' + '-'*56 + '\n\n')
+        self.insert('end', '>>> ')
+        self.config(state='disabled')
+    
     def print2screen(self, object_name):
-        self.delete(1.0, 'end')
-        displaytext = str(self.HEN_object.streams[object_name])
-        self.insert('end', displaytext)
+        if object_name not in ['STREAMS', 'HEAT EXCHANGERS', 'UTILITIES']:
+            self.config(state='normal')
+            commandtext = str('displaying object ' + object_name + '...\n')
+            self.insert('end', commandtext)
+            displaytext = str(self.HEN_object.streams[object_name])
+            self.insert('end', displaytext + '\n\n')
+            self.insert('end', '>>> ')
+            self.config(state='disabled')
 
 class HENOS_objE_tree(ttk.Treeview):
     '''
