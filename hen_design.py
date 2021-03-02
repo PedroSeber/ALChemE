@@ -292,32 +292,44 @@ class HEN:
         # Plotting the temperature graphs
         fig1, ax1 = plt.subplots(dpi = 350)
         ax1.set_title('Temperature Interval Diagram')
-        ax1.set_xlim(-0.5, len(temperatures)-0.5)
-        ax1.set_ylim(-0.5, len(self._plotted_ylines)-0.5)
+        ax1.set_xlim(0, 1)
+        ax1.set_ylim(-0.5 - 0.5*(len(self._plotted_ylines)//10), len(self._plotted_ylines) - 0.5 + 0.5*(len(self._plotted_ylines)//10)) #len()//10 is a correction for HEN with many temperature intervals
         ax1.set_yticks([])
         q_above_text_loc = ax1.get_ylim()[1] - 0.01*(ax1.get_ylim()[1] - ax1.get_ylim()[0])
         q_below_text_loc = ax1.get_ylim()[0] + 0.04*(ax1.get_ylim()[1] - ax1.get_ylim()[0])
         cp_text_loc = ax1.get_ylim()[0] + 0.01*(ax1.get_ylim()[1] - ax1.get_ylim()[0])
-        
+        # Setting the hot streams area and the cold streams area. Streams should be equally spaced
+        # Hot streams go from 0.01 to 0.49; cold streams go from 0.51 to 0.99
+        hot_distance = 0.48 / (sum(self.hot_streams) + 1)
+        hot_idx = 1
+        cold_distance = 0.48 / (sum(~self.hot_streams) + 1)
+        cold_idx = 1
+        x_tick_loc = [0] * len(temperatures)
         
         # Manipulating the temperatures so that the hot and cold values are on the same y-position, even though they're shifted by delta_t
         for idx in range(len(temperatures)):
             if temperatures[idx, 0] > temperatures[idx, 1]:
                 my_color = 'r'
                 my_marker = 'v'
+                horizontal_loc = 0.01 + hot_idx * hot_distance
+                hot_idx += 1
             else:
                 my_color = 'b'
                 my_marker = '^'
+                horizontal_loc = 0.51 + cold_idx * cold_distance
+                cold_idx += 1
 
-            ax1.vlines(idx, temperatures[idx, 0], temperatures[idx, 1], color = my_color, linewidth = 0.25) # Vertical line for each stream
-            ax1.plot(idx, temperatures[idx, 1], color = my_color, marker = my_marker, markersize = 1) # Marker at the end of each vertical line
+            x_tick_loc[idx] = horizontal_loc
+            ax1.vlines(horizontal_loc, temperatures[idx, 0], temperatures[idx, 1], color = my_color, linewidth = 0.25) # Vertical line for each stream
+            ax1.plot(horizontal_loc, temperatures[idx, 1], color = my_color, marker = my_marker, markersize = 1) # Marker at the end of each vertical line
             if show_properties:
-                q_above_text = r'$Q_{Top}$ = %g %s' % (self.streams[x_tick_labels[idx]].q_above, self.heat_unit)
-                ax1.text(idx, q_above_text_loc, q_above_text, ha = 'center', va = 'top') # Heat above the pinch point
-                q_below_text = r'$Q_{Bot}$ = %g %s' % (self.streams[x_tick_labels[idx]].q_below, self.heat_unit)
-                ax1.text(idx, q_below_text_loc, q_below_text, ha = 'center', va = 'bottom') # Heat below the pinch point
-                cp_text = r'$Fc_p$ = %g %s' % (cp_vals[idx], self.cp_unit * self.flow_unit)
-                ax1.text(idx, cp_text_loc, cp_text, ha = 'center', va = 'bottom') # Heat below the pinch point
+                q_above_text = r'$Q_{Top}$: %g %s' % (self.streams[x_tick_labels[idx]].q_above, self.heat_unit)
+                ax1.text(horizontal_loc, q_above_text_loc, q_above_text, ha = 'center', va = 'top') # Heat above the pinch point
+                q_below_text = r'$Q_{Bot}$: %g %s' % (self.streams[x_tick_labels[idx]].q_below, self.heat_unit)
+                ax1.text(horizontal_loc, q_below_text_loc, q_below_text, ha = 'center', va = 'bottom') # Heat below the pinch point
+                cp_unit_plot = str(self.cp_unit * self.flow_unit).replace('delta_deg', '°', 1)
+                cp_text = r'$Fc_p$: %g %s' % (cp_vals[idx], cp_unit_plot)
+                ax1.text(horizontal_loc, cp_text_loc, cp_text, ha = 'center', va = 'bottom') # Heat below the pinch point
         
         # Horizontal lines for each temperature
         for idx, elem in enumerate(self._plotted_ylines):
@@ -329,7 +341,7 @@ class HEN:
                 ax1.text(np.mean(ax1.get_xlim()), idx, my_label2, ha = 'center', va = 'bottom', c = 'blue')
         
         # Labeling the x-axis with the stream names
-        ax1.set_xticks(range(len(temperatures)))
+        ax1.set_xticks(x_tick_loc)
         ax1.set_xticklabels(x_tick_labels)
 
         # Adding the pinch point
