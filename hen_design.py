@@ -397,13 +397,27 @@ class HEN:
         ax.Position = [ti(1), ti(2), 1 - ti(1) - ti(3), 1 - ti(2) - ti(4)]; % Removing whitespace from the graph
         """
 
-    def place_exchangers(self, upper = None, lower = None, forbidden = None, required = None):
+    def place_exchangers(self, pinch, upper = None, lower = None, forbidden = None, required = None):
         """
         Notes to self (WIP):
         Equations come from C.A. Floudas, "Nonlinear and Mixed-Integer Optimization", p. 283
 
         self._interval_heats has each stream as its rows and each interval as its columns, such that the topmost interval is the rightmost column
         """
+
+        # Restricting the number of intervals based on the pinch point
+        if pinch.casefold() in {'above', 'top', 'up'}:
+            if self.first_utility_loc == 0:
+                raise ValueError('This HEN doesn\'t have anything above the pinch')
+            else:
+                num_of_intervals = self._interval_heats[:, -self.first_utility_loc-1:].shape[-1]
+            pinch = 'above'
+        elif pinch.casefold() in {'below', 'bottom', 'bot', 'down'}:
+            if self.first_utility_loc == 0: # No pinch point --> take all intervals
+                num_of_intervals = self._interval_heats.shape[-1]
+            else:
+                num_of_intervals = self._interval_heats[:, :-self.first_utility_loc-1].shape[-1]
+            pinch = 'below'
 
         # Starting GEKKO
         m = GEKKO(remote = False)
@@ -420,12 +434,60 @@ class HEN:
 
         # Setting the heat exchanged limits for each pair of streams
         if upper is None: # Automatically set the upper limits
-            # Hot streams and cold utilities
-            raise NotImplementedError
-        elif type(upper) in (int, float): # A single value was passed, representing a maximum threshold
-            # TODO: first get the upper limits automatically (as above), then truncate any auto-limits higher than the passed threshold
-            #upper = m.Array()
-            pass
+            upper = np.zeros_like(forbidden, dtype = np.float64)
+            for rowidx in range(upper.shape[0]):
+                for colidx in range(upper.shape[1]):
+                    if rowidx < len(self.hot_utilities) and pinch == 'below': # No hot utilities are used below pinch
+                        upper[rowidx, colidx] = 0
+                    elif colidx < len(self.cold_utilities) and pinch == 'above': # No cold utilities are used above pinch
+                        upper[rowidx, colidx] = 0
+                    elif rowidx < len(self.hot_utilities) and colidx < len(self.cold_utilities): # No matches between utilities
+                        upper[rowidx, colidx] = 0
+                    elif rowidx < len(self.hot_utilities): # Match between hot utility and cold stream
+                        temp_idx = np.sum(self.hot_streams) + colidx - len(self.cold_utilities)
+                        if pinch == 'above':
+                            upper[rowidx, colidx] = np.min((self.first_utility, np.sum(self._interval_heats[temp_idx, num_of_intervals:]) ))
+                        else:
+                            upper[rowidx, colidx] = np.min((self.first_utility, np.sum(self._interval_heats[temp_idx, :num_of_intervals]) ))
+                    elif colidx < len(self.cold_utilities): # Match between hot stream and cold utility
+                        temp_idx = rowidx - len(self.hot_utilities)
+                        if pinch == 'above':
+                            upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[temp_idx, num_of_intervals:]), self.last_utility))
+                        else:
+                            upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[temp_idx, :num_of_intervals]), self.last_utility))
+                    else: # Match between two streams
+                        temp_idx1 = rowidx - len(self.hot_utilities)
+                        temp_idx2 = np.sum(self.hot_streams) + colidx - len(self.cold_utilities)
+                        if pinch == 'above':
+                            lowest_cold = (self._interval_heats[temp_idx2, num_of_intervals:] != 0).argmax()
+                            upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[temp_idx1, lowest_cold:]), np.sum(self._interval_heats[temp_idx2, num_of_intervals:]) ))
+                        else:
+                            lowest_cold = (self._interval_heats[temp_idx2, :num_of_intervals] != 0).argmax()
+                            upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[temp_idx1, lowest_cold:num_of_intervals]), np.sum(self._interval_heats[temp_idx2, :num_of_intervals]) ))
+            #pdb.set_trace()
+        elif isinstance(upper, (int, float)): # A single value was passed, representing a maximum threshold
+            temp_upper = upper
+            upper = np.zeros_like(forbidden, dtype = np.float64)
+            for rowidx in range(upper.shape[0]):
+                for colidx in range(upper.shape[1]):
+                    if rowidx < len(self.hot_utilities) and pinch == 'below': # No hot utilities are used below pinch
+                        upper[rowidx, colidx] = 0
+                    elif colidx < len(self.cold_utilities) and pinch == 'above': # No cold utilities are used above pinch
+                        upper[rowidx, colidx] = 0
+                    elif rowidx < len(self.hot_utilities) and colidx < len(self.cold_utilities): # No matches between utilities
+                        upper[rowidx, colidx] = 0 
+                    elif rowidx < len(self.hot_utilities): # Match between hot utility and cold stream
+                        temp_idx = np.sum(self.hot_streams) + colidx - len(self.cold_utilities)
+                        upper[rowidx, colidx] = np.min((self.first_utility, np.sum(self._interval_heats[temp_idx, :]) ))
+                    elif colidx < len(self.cold_utilities): # Match between hot stream and cold utility
+                        temp_idx = rowidx - len(self.hot_utilities)
+                        upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[temp_idx, :]), self.last_utility))
+                    else: # Match between two streams
+                        temp_idx1 = rowidx - len(self.hot_utilities)
+                        temp_idx2 = np.sum(self.hot_streams) + colidx - len(self.cold_utilities)
+                        lowest_cold = (self._interval_heats[temp_idx2, :] != 0).argmax()
+                        upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[temp_idx1, lowest_cold:]), np.sum(self._interval_heats[temp_idx2, :]) ))
+            upper[upper > temp_upper] = temp_upper # Setting the given upper limit only for streams that naturally had a higher limit
         elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
             raise ValueError('Upper must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
         else: # An array-like was passed
@@ -438,10 +500,10 @@ class HEN:
                 for colidx in range(lower.shape[1]):
                     lower[rowidx, colidx] = m.Const(0, f'Qlim_lower_{rowidx}{colidx}')
 
-        
+
         # First N rows of residuals are the N hot utilities
         # The extra interval represents the heats coming in from "above the highest interval" (always 0)
-        residuals = np.zeros((np.sum(self.hot_streams) + len(self.hot_utilities), self._interval_heats.shape[-1] + 1), dtype = np.object)
+        residuals = np.zeros((np.sum(self.hot_streams) + len(self.hot_utilities), num_of_intervals + 1), dtype = np.object)
         for rowidx in range(residuals.shape[0]):
             # All R_0 and R_K must equal 0
             residuals[rowidx, 0] = m.Const(0, f'R_{rowidx}0') 
@@ -452,7 +514,7 @@ class HEN:
 
         # Q_exchanger is how much heat each exchanger will transfer
         # First N rows of Q_exchanger are the N hot utilities; first M columns are the M cold utilities
-        Q_exchanger = np.zeros((np.sum(self.hot_streams) + len(self.hot_utilities), np.sum(~self.hot_streams) + len(self.cold_utilities), self._interval_heats.shape[-1] ), dtype = np.object) # Hot streams, cold streams, and intervals
+        Q_exchanger = np.zeros((np.sum(self.hot_streams) + len(self.hot_utilities), np.sum(~self.hot_streams) + len(self.cold_utilities), num_of_intervals ), dtype = np.object) # Hot streams, cold streams, and intervals
         for rowidx in range(Q_exchanger.shape[0]):
             for colidx in range(Q_exchanger.shape[1]):
                 for intervalidx in range(Q_exchanger.shape[2]):
@@ -470,7 +532,13 @@ class HEN:
         matches = np.zeros_like(Q_exc_tot, dtype = np.object) # Whether there is a heat exchanger between two streams
         for rowidx in range(matches.shape[0]):
             for colidx in range(matches.shape[1]):
-                if forbidden[rowidx, colidx]:
+                if rowidx < len(self.hot_utilities) and pinch == 'below': # No hot utilities are used below pinch
+                    matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
+                elif colidx < len(self.cold_utilities) and pinch == 'above': # No cold utilities are used above pinch
+                    matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
+                elif rowidx < len(self.hot_utilities) and colidx < len(self.cold_utilities): # No matches between utilities
+                    matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
+                elif forbidden[rowidx, colidx]:
                     matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
                 elif required[rowidx, colidx]:
                     matches[rowidx, colidx] = m.Const(1, f'Y_{rowidx}{colidx}')
@@ -494,20 +562,22 @@ class HEN:
         for stidx, rowidx in enumerate(range(len(self.hot_utilities), Q_exchanger.shape[0])): # stidx bc self.hot_streams has only streams, no utilities
             for colidx in range(Q_exchanger.shape[2]):
                 m.Equation(residuals[rowidx, colidx] - residuals[rowidx, colidx+1] +
-                    m.sum(Q_exchanger[rowidx, :, colidx]) == self._interval_heats[self.hot_streams][rowidx, colidx])
+                    m.sum(Q_exchanger[rowidx, :, colidx]) == self._interval_heats[self.hot_streams][stidx, colidx])
 
         # Eqn 2
-        for rowidx in range(len(self.hot_utilities)):
-            for colidx in range(Q_exchanger.shape[2]):
-                m.Equation(residuals[rowidx, colidx] - residuals[rowidx, colidx+1] +
-                    m.sum(Q_exchanger[rowidx, len(self.cold_utilities):, colidx]) == self.first_utility.value)
+        if pinch == 'above':
+            for rowidx in range(len(self.hot_utilities)):
+                m.Equation(m.sum(Q_exchanger[rowidx, len(self.cold_utilities):, :]) == self.first_utility.value)
+
         # Eqn 3
         for stidx, rowidx in enumerate(range(len(self.cold_utilities), Q_exchanger.shape[1])):
             for colidx in range(Q_exchanger.shape[2]):
                 m.Equation(m.sum(Q_exchanger[:, rowidx, colidx]) == self._interval_heats[~self.hot_streams][stidx, colidx])
+        
         # Eqn 4
-        for rowidx in range(len(self.cold_utilities)):
-            m.Equation(m.sum(Q_exchanger[len(self.hot_utilities):, 0, :]) == self.last_utility.value)
+        if pinch == 'below':
+            for rowidx in range(len(self.cold_utilities)):
+                m.Equation(m.sum(Q_exchanger[len(self.hot_utilities):, rowidx, :]) == self.last_utility.value)
 
         for rowidx in range(Q_exc_tot.shape[0]):
             for colidx in range(Q_exc_tot.shape[1]):
@@ -726,6 +796,9 @@ class HEN:
             else:
                 file = file_list[0]
         return pickle.load(open(file, 'rb'))
+    
+    def _get_maximum_heats(pinch, limit_type):
+        pass
 
 class Stream():
     def __init__(self, t1, t2, cp, flow_rate):
