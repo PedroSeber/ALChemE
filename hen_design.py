@@ -658,8 +658,8 @@ class Stream():
             stream_type = 'Hot'
         else:
             stream_type = 'Cold'
-        text =(f'{stream_type} stream with T_in = {self.t1} and T_out = {self.t2}\n'
-            f'c_p = {self.cp} and flow rate = {self.flow_rate}\n')
+        text =(f'{stream_type} stream with T_in = {self.t1} and T_out = {self.t2}'
+             f'c_p = {self.cp} and flow rate = {self.flow_rate}')
         if self.q_above is not None:
             text += f'Above pinch: {self.q_above} total, {self.q_above_remaining:.6g} remaining, T = {self.current_t_above:.4g}\n'
             text += f'Below pinch: {self.q_below} total, {self.q_below_remaining:.6g} remaining, T = {self.current_t_below:.4g}\n'
