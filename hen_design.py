@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import unyt
+from tkinter import ttk
+from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
 from collections import OrderedDict
 import pdb
 import os
@@ -89,7 +91,10 @@ class HEN:
         self.streams = pd.concat([self.streams, temp])
 
         if HENOS_oe_tree is not None:
-            oeDataVector = [stream_name, t1, t2, flow_rate]
+            temp_diff = t2 - t1
+            temp_diff = temp_diff.tolist() * self.delta_temp_unit
+            oeDataVector = [stream_name, t1, t2, cp*flow_rate, cp*flow_rate*temp_diff]
+            print(oeDataVector)
             HENOS_oe_tree.receive_new_stream(oeDataVector)
 
     def activate_stream(self, streams_to_change):
@@ -175,7 +180,6 @@ class HEN:
             self.hot_utilities = pd.concat([self.hot_utilities, temp])
         else: # Cold utility
             self.cold_utilities = pd.concat([self.cold_utilities, temp])
-
     
     def get_parameters(self):
         """
@@ -286,8 +290,6 @@ class HEN:
                     cp_vals[cold_idx, 0] = values[1].cp.value
                     x_tick_labels[cold_idx] = values[0]
                     cold_idx += 1
-                
-
 
         # Plotting the temperature graphs
         fig1, ax1 = plt.subplots(dpi = 350)
@@ -355,8 +357,8 @@ class HEN:
                 ax1.text(np.mean(ax1.get_xlim()), len(self._plotted_ylines) - 1 - 0.01, 'Pinch Point', ha = 'center', va = 'top')
         
         plt.show(block = False)
-        #if tab_control: # Embed into GUI
-         #   generate_GUI_plot(fig1, tab_control, 'Temperature Interval Diagram')
+        if tab_control: # Embed into GUI
+            generate_GUI_plot(fig1, tab_control, 'Temperature Interval Diagram')
 
     def make_cc(self, tab_control = None):
         plt.rcParams['axes.titlesize'] = 5
@@ -388,8 +390,8 @@ class HEN:
         ax2.text(overlap_text_loc, top_text_loc, overlap_text, ha = 'center', va = 'top')
 
         plt.show(block = False)
-        #if tab_control: # Embed into GUI
-        #    generate_GUI_plot(fig2, tab_control, 'Composite Curve')
+        if tab_control: # Embed into GUI
+            generate_GUI_plot(fig2, tab_control, 'Composite Curve')
 
         """ TODO: remove whitespace around the graphs
         ax = gca;
@@ -401,7 +403,6 @@ class HEN:
         """
         Notes to self (WIP):
         Equations come from C.A. Floudas, "Nonlinear and Mixed-Integer Optimization", p. 283
-
         self._interval_heats has each stream as its rows and each interval as its columns, such that the topmost interval is the rightmost column
         """
 
@@ -464,7 +465,6 @@ class HEN:
                         else:
                             lowest_cold = (self._interval_heats[temp_idx2, :num_of_intervals] != 0).argmax()
                             upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[temp_idx1, lowest_cold:num_of_intervals]), np.sum(self._interval_heats[temp_idx2, :num_of_intervals]) ))
-            #pdb.set_trace()
         elif isinstance(upper, (int, float)): # A single value was passed, representing a maximum threshold
             temp_upper = upper
             upper = np.zeros_like(forbidden, dtype = np.float64)
@@ -499,7 +499,6 @@ class HEN:
             for rowidx in range(lower.shape[0]):
                 for colidx in range(lower.shape[1]):
                     lower[rowidx, colidx] = m.Const(0, f'Qlim_lower_{rowidx}{colidx}')
-
 
         # First N rows of residuals are the N hot utilities
         # The extra interval represents the heats coming in from "above the highest interval" (always 0)
@@ -822,8 +821,8 @@ class Stream():
             stream_type = 'Hot'
         else:
             stream_type = 'Cold'
-        text =(f'{stream_type} stream with T_in = {self.t1} and T_out = {self.t2}\n'
-            f'c_p = {self.cp} and flow rate = {self.flow_rate}\n')
+        text =(f'{stream_type} stream with T_in = {self.t1} and T_out = {self.t2}'
+             f'c_p = {self.cp} and flow rate = {self.flow_rate}')
         if self.q_above is not None:
             text += f'Above pinch: {self.q_above} total, {self.q_above_remaining:.6g} remaining, T = {self.current_t_above:.4g}\n'
             text += f'Below pinch: {self.q_below} total, {self.q_below_remaining:.6g} remaining, T = {self.current_t_below:.4g}\n'
@@ -876,3 +875,17 @@ class HeatExchanger():
             f'Has a U = {self.U:.4g}, area = {self.area:.4g}, and ΔT_lm = {self.delta_T_lm:.4g}\n'
             f'Has a base cost of ${self.cost_base:,.2f} and a free on board cost of ${self.cost_fob:,.2f}\n')
         return text
+
+
+# UTILITY FUNCTIONS
+def generate_GUI_plot(plot, tabControl, tab_name):
+    """
+    A function which generates a relevant model plot onto the GUI
+    """
+    new_tab = ttk.Frame(tabControl)
+    tabControl.add(new_tab, text=tab_name)
+    tabControl.pack(expand=1, fill='both')
+    new_canvas = FigureCanvasTkAgg(plot, master=new_tab)
+    new_canvas.draw()
+
+    new_canvas.get_tk_widget().pack()
