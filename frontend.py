@@ -318,7 +318,7 @@ class HENOS_objE_tree(ttk.Treeview):
     def delete_item(self):
         HEN_selectedObject  = self.selection()[0]
         HEN_sO_name = self.item(HEN_selectedObject, 'text')
-        self.HEN_object.Streams([HEN_sO_name])
+        del self.HEN_object.streams[HEN_sO_name]
         self.delete(HEN_selectedObject)
         
     def activate_deactivate_stream(self):
