@@ -55,7 +55,7 @@ class HENOS_app():
         # Initialize control panel elements
         self.HENOS_object_explorer = HENOS_object_explorer(control_panel_Tab, HEN_object)
         self.HENOS_input = HENOS_input(control_panel_Tab, HEN_object, self.HENOS_object_explorer)
-        self.HENOS_ga_frame = HENOS_graphical_analysis_controls(control_panel_Tab, self.HENOS_object_explorer)
+        self.HENOS_ga_frame = HENOS_graphical_analysis_controls(control_panel_Tab, self.tabControl, self.HENOS_object_explorer, HEN_object)
         self.HENOS_os_frame = HENOS_optimization_controls(control_panel_Tab)
         self.HENOS_uc_frame = HENOS_user_constraints(control_panel_Tab)
         
@@ -219,11 +219,11 @@ class HENOS_object_explorer(ttk.Frame):
         # Initialize object explorer control buttons
         self.delete_stream = ttk.Button(self, text='Delete Stream', command=self.objectExplorer.delete_item)
         self.activate_deactivate_stream = ttk.Button(self, text='Activate/Deactivate Stream', command=self.objectExplorer.activate_deactivate_stream)
-        self.delete_stream.grid(row=0, column=2, padx=5)
-        self.activate_deactivate_stream.grid(row=0, column=3, padx=5)
+        self.delete_stream.grid(row=0, column=3, padx=5)
+        self.activate_deactivate_stream.grid(row=0, column=2, padx=5)
         
         # Initialize object visualizer control buttons
-        self.clear_display = ttk.Button(self, text='Clear Display')
+        self.clear_display = ttk.Button(self, text='Clear Display', command=self.objectVisualizer.clearscreen)
         self.clear_display.grid(row = 41, column=3, sticky='e', padx=5)
         
         # Place object explorer and visualizer
@@ -251,7 +251,7 @@ class HENOS_objE_display(tk.Text):
         # Initialize >>>
         self.insert('end', '-'*54 + '***INITIALIZED***' + '-'*56 + '\n\n')
         self.insert('end', '>>> ')
-        self.config(state='disabled')
+        #self.config(state='disabled')
     
     def print2screen(self, object_name):
         if object_name not in ['STREAMS', 'HEAT EXCHANGERS', 'UTILITIES']:
@@ -261,7 +261,13 @@ class HENOS_objE_display(tk.Text):
             displaytext = str(self.HEN_object.streams[object_name])
             self.insert('end', displaytext + '\n\n')
             self.insert('end', '>>> ')
+            self.see('end')
             #self.config(state='disabled')
+
+    def clearscreen(self):
+        self.delete('1.0', 'end')
+        self.insert('end', '-'*54 + '***INITIALIZED***' + '-'*56 + '\n\n')
+        self.insert('end', '>>> ')    
 
 class HENOS_objE_tree(ttk.Treeview):
     '''
@@ -295,7 +301,8 @@ class HENOS_objE_tree(ttk.Treeview):
         self.UtilityNode = self.insert('', index=2, iid=2, text='UTILITIES')
         
         # Initialize 'Single Click' Event (Show Selected Object in Object Explorer)
-        self.bind("<Button-1>", self.send2screen)
+        self.bind('<Button-1>', self.on_click)
+        self.bind("<Double-Button-1>", self.send2screen)
     
     def on_click(self, event):
         tree = event.widget
@@ -310,12 +317,12 @@ class HENOS_objE_tree(ttk.Treeview):
         
     def delete_item(self):
         HEN_selectedObject  = self.selection()[0]
-        #HEN_sO_name = self.item(HEN_selectedObject, 'text')
+        HEN_sO_name = self.item(HEN_selectedObject, 'text')
+        self.HEN_object.Streams([HEN_sO_name])
         self.delete(HEN_selectedObject)
         
     def activate_deactivate_stream(self):
         HEN_selectedObject = self.selection()
-        print(type(HEN_selectedObject))
         
         for stream in HEN_selectedObject:
             HEN_sO_name = self.item(stream, 'text')
@@ -324,32 +331,60 @@ class HENOS_objE_tree(ttk.Treeview):
             if HEN_sO_status == 'Active':
                 self.HEN_object.inactivate_stream(HEN_sO_name)
                 objValues = self.item(stream, 'values')[0:-1]
-                self.insert(self.StreamNode, self.index(stream), text=HEN_sO_name, values=(objValues[0],objValues[1], objValues[2], objValues[3], 'Inactive'))
+                self.insert(self.StreamNode, self.index(stream), text=HEN_sO_name, values=(objValues[0],objValues[1], objValues[2], objValues[3], 'Inactive'), tags='selectable')
                 self.delete(stream)
             elif HEN_sO_status == 'Inactive':
                 self.HEN_object.activate_stream(HEN_sO_name)
                 objValues = self.item(stream, 'values')[0:-1]
-                self.insert(self.StreamNode, self.index(stream), text=HEN_sO_name, values=(objValues[0],objValues[1], objValues[2], objValues[3], 'Active'))
+                self.insert(self.StreamNode, self.index(stream), text=HEN_sO_name, values=(objValues[0],objValues[1], objValues[2], objValues[3], 'Active'), tags='selectable')
                 self.delete(stream)
         
     def send2screen(self, event):
         self.on_click(event)
-        HEN_selectedObject = self.identify('item',event.x, event.y)
-        HEN_sO_name = self.item(HEN_selectedObject, 'text')
-        self.master.objectVisualizer.print2screen(HEN_sO_name)
+        HEN_selectedObject = self.selection()
+        if HEN_selectedObject != ():
+            HEN_sO_name = self.item(HEN_selectedObject, 'text')
+            self.master.objectVisualizer.print2screen(HEN_sO_name)
         
         
 
 class HENOS_graphical_analysis_controls(ttk.Frame):
-    def __init__(self, master, object_explorer):
+    def __init__(self, master, tabControl, object_explorer, HEN_object):
         # Initialize frame properties
         ttk.Frame.__init__(self, master, padding='0.1i', relief='solid')
+        
+        # Define variables
+        self.HEN_object = HEN_object
+        self.master = master
+        self.tabControl = tabControl
         
         # Initialize graphical analysis label
         gaLabel = ttk.Label(self, text='Graphical Analysis', font=('Helvetica', 10, 'bold', 'underline'))
         gaLabel.grid(row=0, column=0, sticky='nw')
         
-
+        # Initialize buttons
+        generate_cc = ttk.Button(self, text='Composite Curve', command=self.make_CC)
+        generate_tid = ttk.Button(self, text='TID', command=self.make_TID)
+        
+        # Settings
+        self.showT = tk.BooleanVar()
+        self.showP = tk.BooleanVar()
+        show_temperatures = ttk.Checkbutton(self, text='Show Temperatures', variable=self.showT, offvalue=False, onvalue=True)
+        show_properties = ttk.Checkbutton(self, text='Show Properties', variable=self.showP, offvalue=False, onvalue=True)
+        
+        # Place
+        generate_cc.grid(row=1, column=0)
+        generate_tid.grid(row=1, column=2)
+        show_temperatures.grid(row=2, column=0)
+        show_properties.grid(row=2, column=1)
+    
+    def make_CC(self):
+        self.HEN_object.get_parameters()
+        self.HEN_object.make_cc(self.tabControl)
+        
+    def make_TID(self):
+        self.HEN_object.get_parameters()
+        self.HEN_object.make_tid(self.showT.get(), self.showP.get(), self.tabControl)
 
 class HENOS_optimization_controls(ttk.Frame):
     def __init__(self, master):
