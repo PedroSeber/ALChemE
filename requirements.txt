@@ -1,7 +1,6 @@
-matplotlib
 numpy
-scipy
+pandas
+matplotlib
 unyt
-collections
-pdb
+gekko
 tkinter
