@@ -21,7 +21,7 @@ class HENOS_app():
         # Defining variables
         self.master = master
         self.style = ttk.Style()
-        self.style.configure('main.TFrame', foreground = "black", background = "red")
+        self.style.configure('main.TFrame')
         
         # Determine screen dimensions
         swidth = master.winfo_screenwidth()
@@ -54,25 +54,33 @@ class HENOS_app():
         
         # Initialize control panel elements
         self.HENOS_object_explorer = HENOS_object_explorer(control_panel_Tab, HEN_object)
-        self.HENOS_stream_input = HENOS_stream_input(control_panel_Tab, HEN_object, self.HENOS_object_explorer)
-        self.HENOS_oe_controls = HENOS_object_explorer_controls(control_panel_Tab, self.HENOS_object_explorer)
-        
+        self.HENOS_input = HENOS_input(control_panel_Tab, HEN_object, self.HENOS_object_explorer)
+        self.HENOS_ga_frame = HENOS_graphical_analysis_controls(control_panel_Tab, self.HENOS_object_explorer)
+        self.HENOS_os_frame = HENOS_optimization_controls(control_panel_Tab)
+        self.HENOS_uc_frame = HENOS_user_constraints(control_panel_Tab)
         
         # Placing control panel elements
         control_panel_Tab.rowconfigure(1, weight=1)
-        self.HENOS_stream_input.grid(row=0, column=0)
-        self.HENOS_object_explorer.grid(row=1, column=0, rowspan=40, columnspan=8, padx=5, sticky='nsew')
-        self.HENOS_oe_controls.grid(row=1, column=9, sticky='nw')
+        control_panel_Tab.rowconfigure(2, weight=1)
+        control_panel_Tab.columnconfigure(9, weight=1)
+        control_panel_Tab.columnconfigure(11, weight=1)
+        self.HENOS_input.grid(row=0, column=0)
+        self.HENOS_object_explorer.grid(row=1, column=0, rowspan=40, columnspan=8, sticky='nsew')
+        self.HENOS_ga_frame.grid(row=0, rowspan=2, column=9, columnspan=2, sticky='nsew')
+        self.HENOS_os_frame.grid(row=0, rowspan=2, column=11, columnspan=2, sticky='nsew')
+        self.HENOS_uc_frame.grid(row=2, column=9, columnspan = 4, sticky='nsew')
         # test = ttk.Button(control_panel_Tab, text='test')
         # test.grid(row=41, column=0, columnspan=8, sticky='ew')
 
-class HENOS_stream_input(ttk.Frame):
+class HENOS_input(ttk.Frame):
     '''
     A class which holds the HENOS stream input. Slave of HENOS_app.    
     '''
     def __init__(self, master, HEN_object, HEN_object_explorer):        
         # Initialize frame properties
-        ttk.Frame.__init__(self, master, padding='0.25i')
+        ttk.Frame.__init__(self, master, padding='0.1i', relief='solid')
+        
+        
 
         # Defining variables
         self.HEN_object = HEN_object
@@ -83,13 +91,18 @@ class HENOS_stream_input(ttk.Frame):
                              'Flow Rate', '', 'Heat Load', '']
         self.input_entries = {}
         
+        # Initialize Input Label
+        name = ttk.Label(self, text='User Input', font=('Helvetica', 10, 'bold', 'underline'))
+        name.grid(row=0, column=0, sticky='w')
+        
+        
         # Arrange stream input components
-        for row in range(2):
+        for row in range(1,3):
             for col in range(10):
-                if row == 0 and col in [0, 1, 2, 4, 6, 8]:
+                if row == 1 and col in [0, 1, 2, 4, 6, 8]:
                     l = ttk.Label(self, text=self.HEN_stream_labels[col])
                     l.grid(row=row, column=col, padx=10)
-                elif row ==0 and col in [3, 5, 7, 9]:
+                elif row == 1 and col in [3, 5, 7, 9]:
                     l = ttk.Label(self, width=12)
                     l.grid(row=row, column=col, padx=10)
                 else:
@@ -116,7 +129,7 @@ class HENOS_stream_input(ttk.Frame):
         
         # Initialize and arrange 'Add Stream' button
         sub_stream = ttk.Button(self, text="Add Stream", command=self.add_stream)
-        sub_stream.grid(row=1, column=10, sticky='nsew')
+        sub_stream.grid(row=2, column=10, sticky='nsew')
     
     def add_stream(self):
         # Populating raw input data vector
@@ -173,8 +186,7 @@ class HENOS_stream_input(ttk.Frame):
             raw_input[9] = unyt.BTU/unyt.s
         
         # Add input to HEN object and data display
-        self.HEN_object.add_stream(t1 = raw_input[1], t2 = raw_input[2], cp = raw_input[4], flow_rate = raw_input[6], heat = raw_input[8], stream_name = raw_input[0], HENOS_oe_tree = self.HEN_object_explorer.objectExplorer, temp_unit = self.temp_unit)
-    
+        self.HEN_object.add_stream(t1 = raw_input[1], t2 = raw_input[2], cp = raw_input[4], flow_rate = raw_input[6], heat = raw_input[8], stream_name = raw_input[0], HENOS_oe_tree = self.HEN_object_explorer.objectExplorer, temp_unit = self.temp_unit)    
 
 class HENOS_object_explorer(ttk.Frame):
     '''
@@ -183,25 +195,45 @@ class HENOS_object_explorer(ttk.Frame):
     '''
     def __init__(self, master, HEN_object):
         # Initialize frame properties
-        ttk.Frame.__init__(self, master, padding='0.25i')
+        ttk.Frame.__init__(self, master, padding='0.1i', relief='solid')
         
         # Defining variables
         self.HEN_object = HEN_object
         
+        # Initialize Object Explorer Label
+        oeLabel = ttk.Label(self, text='Object Explorer', font=('Helvetica', 10, 'bold', 'underline'))
+        oeLabel.grid(row=0, column=0, sticky='w')
+        
+        
+        
+        # Initialize object visualizer label
+        tLabel = ttk.Label(self, text='Terminal Display', font=('Helvetica', 10, 'bold', 'underline'))
+        tLabel.grid(row=41, column=0, sticky='w')
+        
         # Initialize object explorer        
         self.objectExplorer = HENOS_objE_tree(self, self.HEN_object)
-    
         
         # Initialize object visualizer
         self.objectVisualizer = HENOS_objE_display(self, self.HEN_object)
         
+        # Initialize object explorer control buttons
+        self.delete_stream = ttk.Button(self, text='Delete Stream', command=self.objectExplorer.delete_item)
+        self.activate_deactivate_stream = ttk.Button(self, text='Activate/Deactivate Stream', command=self.objectExplorer.activate_deactivate_stream)
+        self.delete_stream.grid(row=0, column=2, padx=5)
+        self.activate_deactivate_stream.grid(row=0, column=3, padx=5)
+        
+        # Initialize object visualizer control buttons
+        self.clear_display = ttk.Button(self, text='Clear Display')
+        self.clear_display.grid(row = 41, column=3, sticky='e', padx=5)
+        
         # Place object explorer and visualizer
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=1)
-        self.rowconfigure(41, weight=1)
-        self.objectExplorer.grid(row=0, column=0)
-        self.objectExplorer.grid(row=0, column=0, rowspan=40, columnspan=8, padx=5, sticky='nsew')
-        self.objectVisualizer.grid(row=41, column=0, rowspan=1, columnspan=8, padx=5, pady=25, sticky='nsew')
+        self.rowconfigure(1, weight=1)
+        self.rowconfigure(41, weight=0)
+        self.rowconfigure(42, weight=1)
+        #self.objectExplorer.grid(row=0, column=0)
+        self.objectExplorer.grid(row=1, column=0, rowspan=40, columnspan=8, padx=5, pady=(5,15), sticky='nsew')
+        self.objectVisualizer.grid(row=42, column=0, rowspan=1, columnspan=8, padx=5, pady=(5,5), sticky='nsew')
 
 class HENOS_objE_display(tk.Text):
     def __init__(self, master, HEN_object):
@@ -308,18 +340,35 @@ class HENOS_objE_tree(ttk.Treeview):
         
         
 
-class HENOS_object_explorer_controls(ttk.Frame):
+class HENOS_graphical_analysis_controls(ttk.Frame):
     def __init__(self, master, object_explorer):
         # Initialize frame properties
-        ttk.Frame.__init__(self, master, padding='0.25i')
+        ttk.Frame.__init__(self, master, padding='0.1i', relief='solid')
         
-        # Delete streams button
-        delete_stream = ttk.Button(self, text='Delete Stream', command=object_explorer.objectExplorer.delete_item)
-        activate_deactivate_stream = ttk.Button(self, text='Activate/Deactivate Stream', command=object_explorer.objectExplorer.activate_deactivate_stream)
+        # Initialize graphical analysis label
+        gaLabel = ttk.Label(self, text='Graphical Analysis', font=('Helvetica', 10, 'bold', 'underline'))
+        gaLabel.grid(row=0, column=0, sticky='nw')
         
-        # Place Buttons
-        delete_stream.grid(row=0, column=0, pady=15)
-        activate_deactivate_stream.grid(row=1, column=0,pady=15)
+
+
+class HENOS_optimization_controls(ttk.Frame):
+    def __init__(self, master):
+        # Intialize fram properties
+        ttk.Frame.__init__(self, master, padding='0.1i', relief='solid')
+    
+        # Initialize optimization suite label
+        osLabel = ttk.Label(self, text='Optimization Suite', font=('Helvetica', 10, 'bold', 'underline'))
+        osLabel.grid(row=0, column=0, sticky='nw')
+
+class HENOS_user_constraints(ttk.Frame):
+    def __init__(self, master):
+        # Initialize frame properties
+        ttk.Frame.__init__(self, master, padding='0.1i', relief='solid')
+        
+        # Initialize user constraints label
+        ucLabel = ttk.Label(self, text='Forbidden/Required Matches', font=('Helvetica', 10, 'bold', 'underline'))
+        ucLabel.grid(row=0, column=0, sticky='nw')
+        
 
 # FUNCTIONS
 def create_dropdown_menu(master, options):
@@ -334,4 +383,5 @@ root = tk.Tk()
 
 if __name__ == '__main__':
     HENOS = HENOS_app(root)
+    HENOS.master.title('HENOS')
     root.mainloop()
