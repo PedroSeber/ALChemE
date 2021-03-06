@@ -252,9 +252,9 @@ class HEN:
                 elem.q_below = q_below[idx] * self.first_utility.units
                 elem.q_below_remaining = q_below[idx] * self.first_utility.units
                 if elem.current_t_above is None:
-                    elem.current_t_above = self._plotted_ylines[self.first_utility_loc] * self.temp_unit - self.delta_t # Shifting the cold temperature by delta T
+                    elem.current_t_above = self._plotted_ylines[-self.first_utility_loc - 2] * self.temp_unit - self.delta_t # Shifting the cold temperature by delta T
                 elif elem.current_t_below is None:
-                    elem.current_t_below = self._plotted_ylines[self.first_utility_loc] * self.temp_unit
+                    elem.current_t_below = self._plotted_ylines[-self.first_utility_loc - 2] * self.temp_unit
             else:
                 idx -= 1
 
@@ -411,7 +411,7 @@ class HEN:
             if self.first_utility_loc == 0:
                 raise ValueError('This HEN doesn\'t have anything above the pinch')
             else:
-                num_of_intervals = self._interval_heats[:, -self.first_utility_loc-1:].shape[-1]
+                num_of_intervals = self.first_utility_loc + 1#self._interval_heats[:, -self.first_utility_loc-1:].shape[-1]
             pinch = 'above'
         elif pinch.casefold() in {'below', 'bottom', 'bot', 'down'}:
             if self.first_utility_loc == 0: # No pinch point --> take all intervals
@@ -447,21 +447,21 @@ class HEN:
                     elif rowidx < len(self.hot_utilities): # Match between hot utility and cold stream
                         temp_idx = np.sum(self.hot_streams) + colidx - len(self.cold_utilities)
                         if pinch == 'above':
-                            upper[rowidx, colidx] = np.min((self.first_utility, np.sum(self._interval_heats[temp_idx, num_of_intervals:]) ))
+                            upper[rowidx, colidx] = np.min((self.first_utility, np.sum(self._interval_heats[temp_idx, -num_of_intervals-1:]) ))
                         else:
                             upper[rowidx, colidx] = np.min((self.first_utility, np.sum(self._interval_heats[temp_idx, :num_of_intervals]) ))
                     elif colidx < len(self.cold_utilities): # Match between hot stream and cold utility
                         temp_idx = rowidx - len(self.hot_utilities)
                         if pinch == 'above':
-                            upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[temp_idx, num_of_intervals:]), self.last_utility))
+                            upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[temp_idx, -num_of_intervals-1:]), self.last_utility))
                         else:
                             upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[temp_idx, :num_of_intervals]), self.last_utility))
                     else: # Match between two streams
                         temp_idx1 = rowidx - len(self.hot_utilities)
                         temp_idx2 = np.sum(self.hot_streams) + colidx - len(self.cold_utilities)
                         if pinch == 'above':
-                            lowest_cold = (self._interval_heats[temp_idx2, num_of_intervals:] != 0).argmax()
-                            upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[temp_idx1, lowest_cold:]), np.sum(self._interval_heats[temp_idx2, num_of_intervals:]) ))
+                            lowest_cold = (self._interval_heats[temp_idx2, -num_of_intervals:] != 0).argmax()
+                            upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[temp_idx1, -num_of_intervals+lowest_cold:]), np.sum(self._interval_heats[temp_idx2, -num_of_intervals:]) ))
                         else:
                             lowest_cold = (self._interval_heats[temp_idx2, :num_of_intervals] != 0).argmax()
                             upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[temp_idx1, lowest_cold:num_of_intervals]), np.sum(self._interval_heats[temp_idx2, :num_of_intervals]) ))
@@ -558,10 +558,15 @@ class HEN:
         """
 
         # Eqn 1
-        for stidx, rowidx in enumerate(range(len(self.hot_utilities), Q_exchanger.shape[0])): # stidx bc self.hot_streams has only streams, no utilities
+        if pinch == 'above': # Used in Eqns 1 and 3. Needed because self._interval_heats has all intervals, not just the ones above pinch
+            interval_correction = -num_of_intervals
+        else:
+            interval_correction = 0
+        
+        for stidx, rowidx in enumerate(range(len(self.hot_utilities), Q_exchanger.shape[0])): # stidx bc self.hot_streams has only streams, but no utilities
             for colidx in range(Q_exchanger.shape[2]):
                 m.Equation(residuals[rowidx, colidx] - residuals[rowidx, colidx+1] +
-                    m.sum(Q_exchanger[rowidx, :, colidx]) == self._interval_heats[self.hot_streams][stidx, colidx])
+                    m.sum(Q_exchanger[rowidx, :, colidx]) == self._interval_heats[self.hot_streams][stidx, interval_correction+colidx])
 
         # Eqn 2
         if pinch == 'above':
@@ -571,7 +576,7 @@ class HEN:
         # Eqn 3
         for stidx, rowidx in enumerate(range(len(self.cold_utilities), Q_exchanger.shape[1])):
             for colidx in range(Q_exchanger.shape[2]):
-                m.Equation(m.sum(Q_exchanger[:, rowidx, colidx]) == self._interval_heats[~self.hot_streams][stidx, colidx])
+                m.Equation(m.sum(Q_exchanger[:, rowidx, colidx]) == self._interval_heats[~self.hot_streams][stidx, interval_correction+colidx])
         
         # Eqn 4
         if pinch == 'below':
@@ -612,6 +617,7 @@ class HEN:
                 if colidx == Q_tot_results.shape[1]:
                     colidx = 0
                     rowidx += 1
+        Q_tot_results[Q_tot_results < 1e-9] = 0 # Rounding to prevent extremely small heats from being counted. Cutoff may need extra tuning
         Y_results[Q_tot_results > 0] = 1
         
         # Generating names to be used in a Pandas DataFrame with the results
@@ -694,18 +700,20 @@ class HEN:
             s2_t_above = self.streams[stream2].current_t_above + heat/(self.streams[stream2].cp * self.streams[stream2].flow_rate)
             
             # Data validation
+            delta_T1 = self.streams[stream1].current_t_above - s2_t_above
+            delta_T2 = s1_t_above - self.streams[stream2].current_t_above
             if self.streams[stream1].current_t_above < s2_t_above:
                 raise ValueError(f'Match is thermodynamically impossible, as the hot stream is entering with a temperature of {self.streams[stream1].current_t_above:.4g}, '
                     f'while the cold stream is leaving with a temperature of {s2_t_above:.4g}')
             elif s1_t_above < self.streams[stream2].current_t_above:
                 raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_above:.4g}, '
                     f'while the cold stream is entering with a temperature of {self.streams[stream2].current_t_above:.4g}')
-            elif s1_t_above - s2_t_above < self.delta_t:
-                    warnings.warn(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {s1_t_above-s2_t_above:.4g}")
+            elif delta_T1 < self.delta_t:
+                warnings.warn(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T1:.4g}")
+            elif delta_T2 < self.delta_t:
+                warnings.warn(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T2:.4g}")
             
             # Recording the data
-            delta_T1 = self.streams[stream1].current_t_above - s2_t_above
-            delta_T2 = s1_t_above - self.streams[stream2].current_t_above
             self.streams[stream1].q_above_remaining = s1_q_above
             self.streams[stream1].current_t_above = s1_t_above
             self.streams[stream2].q_above_remaining = s2_q_above
@@ -745,18 +753,20 @@ class HEN:
             s2_t_below = self.streams[stream2].current_t_below + heat/(self.streams[stream2].cp * self.streams[stream2].flow_rate)
             
             # Data validation
+            delta_T1 = self.streams[stream1].current_t_below - s2_t_below
+            delta_T2 = s1_t_below - self.streams[stream2].current_t_below
             if self.streams[stream1].current_t_below < s2_t_below:
                 raise ValueError(f'Match is thermodynamically impossible, as the hot stream is entering with a temperature of {self.streams[stream1].current_t_below:.4g}, '
                     f'while the cold stream is leaving with a temperature of {s2_t_below:.4g}')
             elif s1_t_below < self.streams[stream2].current_t_below:
                 raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_below:.4g}, '
                     f'while the cold stream is entering with a temperature of {self.streams[stream2].current_t_below:.4g}')
-            elif s1_t_below - s2_t_below < self.delta_t:
-                    print(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {s1_t_below-s2_t_below:.4g}")
+            elif delta_T1 < self.delta_t:
+                    print(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T1:.4g}")
+            elif delta_T2 < self.delta_t:
+                    print(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T2:.4g}")
             
             # Recording the data
-            delta_T1 = self.streams[stream1].current_t_below - s2_t_below
-            delta_T2 = s1_t_below - self.streams[stream2].current_t_below
             self.streams[stream1].q_below_remaining = s1_q_below
             self.streams[stream1].current_t_below = s1_t_below
             self.streams[stream2].q_below_remaining = s2_q_below
@@ -822,7 +832,7 @@ class Stream():
         else:
             stream_type = 'Cold'
         text =(f'{stream_type} stream with T_in = {self.t1} and T_out = {self.t2}'
-             f'c_p = {self.cp} and flow rate = {self.flow_rate}')
+             f'c_p = {self.cp} and flow rate = {self.flow_rate}\n')
         if self.q_above is not None:
             text += f'Above pinch: {self.q_above} total, {self.q_above_remaining:.6g} remaining, T = {self.current_t_above:.4g}\n'
             text += f'Below pinch: {self.q_below} total, {self.q_below_remaining:.6g} remaining, T = {self.current_t_below:.4g}\n'
