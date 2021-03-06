@@ -54,25 +54,25 @@ class HENOS_app():
         
         # Initialize control panel elements
         self.HENOS_object_explorer = HENOS_object_explorer(control_panel_Tab, HEN_object)
-        self.HENOS_input = HENOS_input(control_panel_Tab, HEN_object, self.HENOS_object_explorer)
+        self.HENOS_si_frame = HENOS_stream_input(control_panel_Tab, HEN_object, self.HENOS_object_explorer)
         self.HENOS_ga_frame = HENOS_graphical_analysis_controls(control_panel_Tab, self.tabControl, self.HENOS_object_explorer, HEN_object)
         self.HENOS_os_frame = HENOS_optimization_controls(control_panel_Tab)
         self.HENOS_uc_frame = HENOS_user_constraints(control_panel_Tab)
         
         # Placing control panel elements
-        control_panel_Tab.rowconfigure(1, weight=1)
         control_panel_Tab.rowconfigure(2, weight=1)
+        control_panel_Tab.rowconfigure(4, weight=2)
         control_panel_Tab.columnconfigure(9, weight=1)
-        control_panel_Tab.columnconfigure(11, weight=1)
-        self.HENOS_input.grid(row=0, column=0)
-        self.HENOS_object_explorer.grid(row=1, column=0, rowspan=40, columnspan=8, sticky='nsew')
-        self.HENOS_ga_frame.grid(row=0, rowspan=2, column=9, columnspan=2, sticky='nsew')
-        self.HENOS_os_frame.grid(row=0, rowspan=2, column=11, columnspan=2, sticky='nsew')
-        self.HENOS_uc_frame.grid(row=2, column=9, columnspan = 4, sticky='nsew')
-        # test = ttk.Button(control_panel_Tab, text='test')
-        # test.grid(row=41, column=0, columnspan=8, sticky='ew')
+        
+        self.HENOS_si_frame.grid(row=0, rowspan=4, column=0, sticky='nsew')
+        
+        self.HENOS_ga_frame.grid(row=1, column=9, sticky='new')
+        self.HENOS_os_frame.grid(row=2, column=9,  sticky='nsew')
+        
+        self.HENOS_object_explorer.grid(row=4, column=0, rowspan=40, columnspan=8, sticky='nsew')
+        self.HENOS_uc_frame.grid(row=4, column=9, sticky='nsew')
 
-class HENOS_input(ttk.Frame):
+class HENOS_stream_input(ttk.Frame):
     '''
     A class which holds the HENOS stream input. Slave of HENOS_app.    
     '''
@@ -88,48 +88,143 @@ class HENOS_input(ttk.Frame):
         self.HEN_stream_labels = ['Stream Name', 'Inlet Temperature',
                              'Outlet Temperature', '',
                              'Heat Capacity', '',
-                             'Flow Rate', '', 'Heat Load', '']
+                             'Flow Rate', '', '', 'Heat Load', '']
+        self.HEN_exchanger_labels = ['Exchanger Name', 'Hot Stream', 'Cold Stream', 'Reference Stream',
+                             'Inlet Temperature', 'Outlet Temperature', '', '', 'Heat Load', '',
+                             'Pressure', '', 'Exchanger Type', 'Cost Parameter A', 'Cost Parameter B']
+        self.HEN_utility_labels = ['Utility Name', 'Utility Type', 'Temperature', '', 'Cost', '']
         self.input_entries = {}
         
         # Initialize Input Label
-        name = ttk.Label(self, text='User Input', font=('Helvetica', 10, 'bold', 'underline'))
-        name.grid(row=0, column=0, sticky='w')
+        siLabel = ttk.Label(self, text='Stream Input', font=('Helvetica', 10, 'bold', 'underline'))
+        siLabel.grid(row=0, column=0, sticky='w')
         
+        eiLabel = ttk.Label(self, text='Heat Exchanger Input', font=('Helvetica', 10, 'bold', 'underline'))
+        eiLabel.grid(row=3, column=0, pady=(20,0), sticky='w')
+        
+        uiLabel = ttk.Label(self, text='Utility Input', font=('Helvetica', 10, 'bold', 'underline'))
+        uiLabel.grid(row=8, column=0, pady=(20,0), sticky='w')
         
         # Arrange stream input components
         for row in range(1,3):
-            for col in range(10):
-                if row == 1 and col in [0, 1, 2, 4, 6, 8]:
+            for col in range(11):
+                if row == 1 and col in [0, 1, 2, 4, 6, 9]:
                     l = ttk.Label(self, text=self.HEN_stream_labels[col])
                     l.grid(row=row, column=col, padx=10)
-                elif row == 1 and col in [3, 5, 7, 9]:
+                elif row == 1 and col in [3, 5, 7, 10]:
                     l = ttk.Label(self, width=12)
                     l.grid(row=row, column=col, padx=10)
                 else:
-                    if col in [0, 1, 2, 4, 6, 8]:
+                    if col in [0, 1, 2, 4, 6, 9]:
                         e = ttk.Entry(self, width=12)
                         e.grid(row=row, column=col)
                         self.input_entries[col] = e
                     elif col == 3:
                         m = create_dropdown_menu(self, ['°C', '°F', '°K'])
-                        m[0].grid(row = row, column=col)
+                        m[0].grid(row = row, column=col, sticky='w')
                         self.input_entries[col] = m[1]
                     elif col == 5:
                         m = create_dropdown_menu(self, ['J/(kg·°C)', 'BTU/(lb·°F)', 'J/(kg·°K)'])
-                        m[0].grid(row = row, column=col)
+                        m[0].grid(row = row, column=col, sticky='w')
                         self.input_entries[col] = m[1]
                     elif col == 7:
                         m = create_dropdown_menu(self, ['kg/s', 'lb/s'])
-                        m[0].grid(row = row, column=col)
+                        m[0].grid(row = row, column=col, sticky='w')
                         self.input_entries[col] = m[1]
-                    elif col == 9:
+                    elif row == 2 and col == 8:
+                        l = ttk.Label(self, text='OR', font=('Helvetica', 10, 'bold'))
+                        l.grid(row=row, column=col, padx=(0,10))
+                    elif col == 10:
                         m = create_dropdown_menu(self, ['W', 'kcal/s', 'BTU/s'])
-                        m[0].grid(row = row, column=col)
+                        m[0].grid(row = row, column=col, sticky='w')
                         self.input_entries[col] = m[1]
         
+        # Arrange exchanger input components
+        for row in range(4, 8):
+             for col in range(11):
+                if row == 4: 
+                    if col in [0, 1, 2, 3, 4, 5, 8]:
+                        l = ttk.Label(self, text=self.HEN_exchanger_labels[col])
+                        l.grid(row=row, column=col, padx=10)
+                    else:
+                        l = ttk.Label(self, width=6)
+                        l.grid(row=row, column=col, padx=10)
+                elif row == 5:
+                    if col in [0, 1, 2, 4, 5, 8]:
+                        e = ttk.Entry(self, width=12)
+                        e.grid(row=row, column=col)
+                        self.input_entries[col] = e
+                    elif col == 3:
+                        m = create_dropdown_menu(self, ['Hot', 'Cold'])
+                        m[0].grid(row = row, column=col)
+                        self.input_entries[col] = m[1]
+                    elif col == 6:
+                        m = create_dropdown_menu(self, ['°C', '°F', '°K'])
+                        m[0].grid(row = row, column=col, sticky='w')
+                        self.input_entries[col] = m[1]
+                    elif col == 7:
+                        l = ttk.Label(self, text='OR', font=('Helvetica', 10, 'bold'))
+                        l.grid(row=row, column=col)
+                    elif col == 9:
+                        m = create_dropdown_menu(self, ['W', 'kcal/s', 'BTU/s'])
+                        m[0].grid(row = row, column=col, sticky='w')
+                        self.input_entries[col] = m[1]
+                elif row == 6:
+                    if col in [1, 2, 3, 4, 5]:
+                            l = ttk.Label(self, text=self.HEN_exchanger_labels[-6 + col])
+                            l.grid(row = row, column=col, padx=10, pady=(10,0))
+                else:
+                    if col in [1, 2, 3, 4, 5]:
+                        if col == 1:
+                            e = ttk.Entry(self, width=12)
+                            e.grid(row=row, column=col)
+                            self.input_entries[col] = e
+                        elif col == 2:
+                            m = create_dropdown_menu(self, ['Pa', 'psi'])
+                            m[0].grid(row = row, column=col, sticky='w')
+                            self.input_entries[col] = m[1]
+                        elif col == 3:
+                            m = create_dropdown_menu(self, ['Fixed Head', 'Floating Head', 'U Tube', 'Kettle Vaporizer'])
+                            m[0].grid(row = row, column=col)
+                            self.input_entries[col] = m[1]
+                        elif col == 4 or col == 5:
+                            e = ttk.Entry(self, width=12)
+                            e.grid(row=row, column=col)                            
+        
+        # Arrange utility input components
+        for row in range(10,12):
+            for col in range(6):
+                if row == 10:
+                    l = ttk.Label(self, text=self.HEN_utility_labels[col])
+                    l.grid(row=row, column=col, padx=10)
+                else:
+                    if col in [0, 2, 4]:
+                        e = ttk.Entry(self, width=12)
+                        e.grid(row=row, column=col)
+                        self.input_entries[col] = e
+                    elif col == 1:
+                        m = create_dropdown_menu(self, ['Hot', 'Cold'])
+                        m[0].grid(row = row, column=col)
+                        self.input_entries[col] = m[1]
+                    elif col == 3:
+                        m = create_dropdown_menu(self, ['°C', '°F', '°K'])
+                        m[0].grid(row = row, column=col, sticky='w')
+                        self.input_entries[col] = m[1]
+                    elif col == 5:
+                        m = create_dropdown_menu(self, ['$', '€', 'human lives'])
+                        m[0].grid(row = row, column=col, sticky='w')
+                        self.input_entries[col] = m[1]
         # Initialize and arrange 'Add Stream' button
         sub_stream = ttk.Button(self, text="Add Stream", command=self.add_stream)
-        sub_stream.grid(row=2, column=10, sticky='nsew')
+        sub_stream.grid(row=2, column=11, sticky='nsew')
+        
+        # Initialize and arrange 'Add Exchanger' button
+        sub_exchanger = ttk.Button(self, text="Add Exchanger", command=self.add_stream)
+        sub_exchanger.grid(row=7, column=11, sticky='nsew')
+        
+        # Initialize and arrange 'Add Utility' button
+        sub_utility = ttk.Button(self, text="Add Utility", command=self.add_stream)
+        sub_utility.grid(row=11, column=11, sticky='nsew')
     
     def add_stream(self):
         # Populating raw input data vector
@@ -138,13 +233,11 @@ class HENOS_input(ttk.Frame):
             rawdata = self.input_entries[col].get()
             if rawdata == '': rawdata = None
             raw_input.append(rawdata)
-            if col in [0, 1, 2, 4, 6, 8]:
+            if col in [0, 1, 2, 4, 6, 9]:
                 self.input_entries[col].delete(0, 'end')
         
-        print(raw_input)
-        
         # HEN object input data transfer, convert all numeric values to floats
-        for ii in [1, 2, 4, 6, 8]:
+        for ii in [1, 2, 4, 6, 9]:
             try:
                 numericdata = float(raw_input[ii])
                 raw_input[ii] = numericdata
@@ -178,15 +271,93 @@ class HENOS_input(ttk.Frame):
             raw_input[7] = unyt.lb/unyt.s
         
         # Convert heat load unit input to unyt input
-        if raw_input[9] == 'W':
-            raw_input[9] = unyt.W
-        elif raw_input[9] == 'kcal/s':
-            raw_input[9] = unyt.kcal/unyt.s
+        if raw_input[10] == 'W':
+            raw_input[10] = unyt.W
+        elif raw_input[10] == 'kcal/s':
+            raw_input[10] = unyt.kcal/unyt.s
         else:
-            raw_input[9] = unyt.BTU/unyt.s
+            raw_input[10] = unyt.BTU/unyt.s
         
         # Add input to HEN object and data display
-        self.HEN_object.add_stream(t1 = raw_input[1], t2 = raw_input[2], cp = raw_input[4], flow_rate = raw_input[6], heat = raw_input[8], stream_name = raw_input[0], HENOS_oe_tree = self.HEN_object_explorer.objectExplorer, temp_unit = self.temp_unit)    
+        self.HEN_object.add_stream(t1 = raw_input[1], t2 = raw_input[2], cp = raw_input[4], flow_rate = raw_input[6], heat = raw_input[9], stream_name = raw_input[0], HENOS_oe_tree = self.HEN_object_explorer.objectExplorer, temp_unit = self.temp_unit, cp_unit = raw_input[5], flow_unit = raw_input[7], heat_unit = raw_input[10])    
+
+class HENOS_exchanger_input(ttk.Frame):
+    def __init__(self, master, HEN_object, HEN_object_explorer):
+             # Initialize frame properties
+        ttk.Frame.__init__(self, master, padding='0.1i', relief='solid')
+        
+        
+
+        # Defining variables
+        self.HEN_object = HEN_object
+        self.HEN_object_explorer = HEN_object_explorer
+        self.HEN_stream_labels = ['Exchanger Name', 'Hot Stream', 'Cold Stream', 'Reference Stream',
+                             'Inlet Temperature', 'Outlet Temperature', '', '', 'Heat Load', '',
+                             'Pressure', '', 'Exchanger Type', 'Cost Parameter A', 'Cost Parameter B']
+        self.input_entries = {}
+        
+        # Initialize Input Label
+        name = ttk.Label(self, text='Heat Exchanger Input', font=('Helvetica', 10, 'bold', 'underline'))
+        name.grid(row=0, column=0, sticky='w')
+        
+        
+        # Arrange stream input components
+        for row in range(1,5):
+            for col in range(10):
+                if row == 1: 
+                    if col in [0, 1, 2, 3, 4, 5, 8]:
+                        l = ttk.Label(self, text=self.HEN_stream_labels[col])
+                        l.grid(row=row, column=col, padx=10)
+                    else:
+                        l = ttk.Label(self, width=6)
+                        l.grid(row=row, column=col, padx=10)
+                elif row == 2:
+                    if col in [0, 1, 2, 4, 5, 8]:
+                        e = ttk.Entry(self, width=12)
+                        e.grid(row=row, column=col)
+                        self.input_entries[col] = e
+                    elif col == 3:
+                        m = create_dropdown_menu(self, ['Hot Stream', 'Cold Stream'])
+                        m[0].grid(row = row, column=col)
+                        self.input_entries[col] = m[1]
+                    elif col == 6:
+                        m = create_dropdown_menu(self, ['°C', '°F', '°K'])
+                        m[0].grid(row = row, column=col)
+                        self.input_entries[col] = m[1]
+                    elif col == 7:
+                        l = ttk.Label(self, text='OR', font=('Helvetica', 10, 'bold'))
+                        l.grid(row=row, column=col)
+                    elif col == 9:
+                        m = create_dropdown_menu(self, ['W', 'kcal/s', 'BTU/s'])
+                        m[0].grid(row = row, column=col)
+                        self.input_entries[col] = m[1]
+                elif row == 3:
+                    if col in [0, 1, 2]:
+                        if col == 0:
+                            l = ttk.Label(self, text=self.HEN_stream_labels[-3])
+                            l.grid(row=row, column=col, padx=10)
+                        elif col == 1:
+                            l = ttk.Label(self, text=self.HEN_stream_labels[-2])
+                            l.grid(row=row, column=col, padx=10)
+                        else:
+                            l = ttk.Label(self, text=self.HEN_stream_labels[-1])
+                            l.grid(row=row, column=col, padx=10)
+                else:
+                    if col in [0, 1, 2]:
+                        if col == 0:
+                            m = create_dropdown_menu(self, ['Fixed Head', 'Floating Head', 'U Tube', 'Kettle Vaporizer'])
+                            m[0].grid(row = row, column=col)
+                            self.input_entries[col] = m[1]
+                        elif col == 1 or col == 2:
+                            l = ttk.Label(self, text=self.HEN_stream_labels[-2])
+                            l.grid(row=row, column=col, padx=10)
+                        else:
+                            e = ttk.Entry('self', width=12)
+                            e.grid(row=row, column=col)
+        
+        # Initialize and arrange 'Add Exchanger' button
+        sub_stream = ttk.Button(self, text="Add Exchanger")
+        sub_stream.grid(row=4, column=11, sticky='nsew')  
 
 class HENOS_object_explorer(ttk.Frame):
     '''
@@ -373,10 +544,10 @@ class HENOS_graphical_analysis_controls(ttk.Frame):
         show_properties = ttk.Checkbutton(self, text='Show Properties', variable=self.showP, offvalue=False, onvalue=True)
         
         # Place
-        generate_cc.grid(row=1, column=0)
-        generate_tid.grid(row=1, column=2)
-        show_temperatures.grid(row=2, column=0)
-        show_properties.grid(row=2, column=1)
+        generate_cc.grid(row=1, column=0, padx=(0,15))
+        generate_tid.grid(row=1, column=2, padx=(15,0))
+        show_temperatures.grid(row=1, column=3, padx=5)
+        show_properties.grid(row=1, column=4, padx=5)
     
     def make_CC(self):
         self.HEN_object.get_parameters()
