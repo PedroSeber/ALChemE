@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import unyt
 from tkinter import ttk
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
-from collections import OrderedDict
 import pdb
 import os
 import pickle
@@ -28,7 +27,7 @@ class HEN:
         self.inactive_cold_streams = 0
         self.hot_utilities = pd.Series()
         self.cold_utilities = pd.Series()
-        self.exchangers = OrderedDict()
+        self.exchangers = pd.Series()
 
         # Making unyt work since it doesn't like multiplying with °C and °F
         if self.temp_unit == unyt.degC:
@@ -89,6 +88,7 @@ class HEN:
         # Generating the stream object and adding it to the HEN object
         temp = pd.Series(Stream(t1, t2, cp, flow_rate), [stream_name])
         self.streams = pd.concat([self.streams, temp])
+        self.upper_limit = None
 
         if HENOS_oe_tree is not None:
             temp_diff = t2 - t1
@@ -159,7 +159,7 @@ class HEN:
             temperature = temperature.to(self.temp_unit)
         
         if cost_unit is None: # None that cost unit is in currency / energy (or currency / power), so that's why we divide it by self.heat unit
-                cost /= self.heat_unit
+            cost /= self.heat_unit
         else:
             cost *= cost_unit
             cost = cost.to(1/self.heat_unit)
@@ -181,6 +181,36 @@ class HEN:
         else: # Cold utility
             self.cold_utilities = pd.concat([self.cold_utilities, temp])
     
+    def delete(self, obj_to_del):
+        if obj_to_del in self.hot_utilities: # More will be added once exchangers to utilities get implemented
+            del self.hot_utilities[obj_to_del]
+        elif obj_to_del in self.cold_utilities:
+            del self.cold_utilities[obj_to_del]
+        elif obj_to_del in self.streams:
+            for exchanger in self.streams[obj_to_del].connected_exchangers[::-1]: # All exchangers connected to a deleted stream should be removed
+                self.delete(exchanger)
+            del self.streams[obj_to_del]
+        elif obj_to_del in self.exchangers:
+            s1 = self.exchangers[obj_to_del].stream1 # Names of the streams connected by this exchanger
+            s2 = self.exchangers[obj_to_del].stream2
+            # Restoring the Q remaining and current temperature values of each stream
+            if self.exchangers[obj_to_del].pinch == 'above':
+                self.streams[s1].q_above_remaining += self.exchangers[obj_to_del].heat
+                self.streams[s1].current_t_above += self.exchangers[obj_to_del].heat / (self.streams[s1].cp * self.streams[s1].flow_rate)
+                self.streams[s2].q_above_remaining += self.exchangers[obj_to_del].heat
+                self.streams[s2].current_t_above -= self.exchangers[obj_to_del].heat / (self.streams[s2].cp * self.streams[s2].flow_rate)
+            else:
+                self.streams[s1].q_below_remaining += self.exchangers[obj_to_del].heat
+                self.streams[s1].current_t_below += self.exchangers[obj_to_del].heat / (self.streams[s1].cp * self.streams[s1].flow_rate)
+                self.streams[s2].q_below_remaining += self.exchangers[obj_to_del].heat
+                self.streams[s2].current_t_below -= self.exchangers[obj_to_del].heat / (self.streams[s2].cp * self.streams[s2].flow_rate)
+            # Removing the exchanger from each stream's connected_exchangers list
+            self.streams[s1].connected_exchangers.remove(obj_to_del)
+            self.streams[s2].connected_exchangers.remove(obj_to_del)
+            del self.exchangers[obj_to_del]
+        else:
+            raise ValueError(f'{obj_to_del} not found in the utilities, streams, or exchangers')
+
     def get_parameters(self):
         """
         This function obtains parameters (enthalpies, pinch temperature, heats above / below pinch) for the streams associated with this HEN object.
@@ -252,11 +282,23 @@ class HEN:
                 elem.q_below = q_below[idx] * self.first_utility.units
                 elem.q_below_remaining = q_below[idx] * self.first_utility.units
                 if elem.current_t_above is None:
-                    elem.current_t_above = self._plotted_ylines[-self.first_utility_loc - 2] * self.temp_unit - self.delta_t # Shifting the cold temperature by delta T
+                    if self.first_utility_loc > 0: # Arrays begin at 0 but end at -1, so a pinch point at the highest interval causes issues
+                        elem.current_t_above = self._plotted_ylines[-self.first_utility_loc - 2] * self.temp_unit - self.delta_t # Shifting the cold temperature by delta T
+                    else:
+                        elem.current_t_above = self._plotted_ylines[-1] * self.temp_unit - self.delta_t # Shifting the cold temperature by delta T
                 elif elem.current_t_below is None:
-                    elem.current_t_below = self._plotted_ylines[-self.first_utility_loc - 2] * self.temp_unit
+                    if self.first_utility_loc > 0:
+                        elem.current_t_below = self._plotted_ylines[-self.first_utility_loc - 2] * self.temp_unit
+                    else:
+                        elem.current_t_below = self._plotted_ylines[-1] * self.temp_unit
             else:
                 idx -= 1
+        
+        # Heat limits used in the backend version of place_exchangers()
+        self.upper_limit = np.zeros((np.sum(self.hot_streams) + len(self.hot_utilities), np.sum(~self.hot_streams) + len(self.cold_utilities)), dtype = np.object)
+        self.lower_limit = np.zeros_like(self.upper_limit)
+        self.forbidden = np.zeros_like(self.upper_limit, dtype = np.bool)
+        self.required = np.zeros_like(self.forbidden)
 
     def make_tid(self, show_temperatures = True, show_properties = True, tab_control = None):
         """
@@ -639,7 +681,7 @@ class HEN:
         return Y_results, Q_tot_results
 
 
-    def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, t_in = None, t_out = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), 
+    def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, exchanger_delta_t = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), 
         exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0, pressure_unit = unyt.Pa):
 
         # General data validation
@@ -674,11 +716,11 @@ class HEN:
                 else:
                     ref_stream = 1
             
-            if t_in is not None and t_out is not None: # Operating the exchanger using temperatures
+            if exchanger_delta_t is not None: # Operating the exchanger using a stream ΔT value
                 if ref_stream == 1: # Temperature values must be referring to only one of the streams - the first stream in this case
-                    heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * (np.abs(t_in - t_out)*self.delta_temp_unit)
+                    heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * (np.abs(exchanger_delta_t)*self.delta_temp_unit)
                 else:
-                    heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * (np.abs(t_in - t_out)*self.delta_temp_unit)
+                    heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * (np.abs(exchanger_delta_t)*self.delta_temp_unit)
             elif type(heat) is str and heat.casefold() == 'auto':
                 if self.streams[stream1].cp * self.streams[stream1].flow_rate >= self.streams[stream2].cp * self.streams[stream2].flow_rate:
                     heat = np.minimum(self.streams[stream1].q_above_remaining, self.streams[stream2].q_above_remaining) # Maximum heat exchanged is the minimum total heat between streams
@@ -727,11 +769,11 @@ class HEN:
                 else:
                     ref_stream = 1
 
-            if t_in is not None and t_out is not None: # Operating the exchanger using temperatures
+            if exchanger_delta_t is not None: # Operating the exchanger using temperatures
                 if ref_stream == 1: # Temperature values must be referring to only one of the streams - the first stream in this case
-                    heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * (np.abs(t_in - t_out)*self.delta_temp_unit)
+                    heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * (np.abs(exchanger_delta_t)*self.delta_temp_unit)
                 else:
-                    heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * (np.abs(t_in - t_out)*self.delta_temp_unit)
+                    heat = self.streams[stream2].cp * self.streams[stream2].flow_rate * (np.abs(exchanger_delta_t)*self.delta_temp_unit)
             elif type(heat) is str and heat.casefold() == 'auto':
                 if self.streams[stream1].cp * self.streams[stream1].flow_rate <= self.streams[stream2].cp * self.streams[stream2].flow_rate:
                     heat = np.minimum(self.streams[stream1].q_below_remaining, self.streams[stream2].q_below_remaining) # Maximum heat exchanged is the minimum total heat between streams
@@ -774,8 +816,12 @@ class HEN:
         
         # Creating the exchanger object
         delta_T_lm = (delta_T1.value - delta_T2.value) / (np.log(delta_T1.value/delta_T2.value)) * self.delta_temp_unit
+        U = U * U_unit
         pressure = pressure * pressure_unit
-        self.exchangers[exchanger_name] = HeatExchanger(stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type, cost_a, cost_b, pressure)
+        temp = pd.Series(HeatExchanger(stream1, stream2, heat, pinch, U, delta_T_lm, exchanger_type, cost_a, cost_b, pressure, exchanger_name), [exchanger_name])
+        self.exchangers = pd.concat([self.exchangers, temp])
+        self.streams[stream1].connected_exchangers.append(exchanger_name) # Used when the stream is deleted
+        self.streams[stream2].connected_exchangers.append(exchanger_name)
         
     def save(self, name, overwrite = False):
         if "." in name:
@@ -818,6 +864,7 @@ class Stream():
         self.q_above = None # Will be updated once pinch point is found
         self.q_below = None
         self.active = True
+        self.connected_exchangers = [] # When stream is deleted, exchangers should also be deleted
 
         if self.t1 > self.t2: # Hot stream
             self.current_t_above = self.t1
@@ -851,16 +898,17 @@ class Utility():
         return text
 
 class HeatExchanger():
-    def __init__(self, stream1, stream2, heat, pinch, U, U_unit, delta_T_lm, exchanger_type, cost_a, cost_b, pressure):
+    def __init__(self, stream1, stream2, heat, pinch, U, delta_T_lm, exchanger_type, cost_a, cost_b, pressure, name):
         self.stream1 = stream1
         self.stream2 = stream2
         self.heat = heat
         self.pinch = pinch
-        self.U = U * U_unit
+        self.U = U
         self.delta_T_lm = delta_T_lm
         self.area = self.heat / (self.U * self.delta_T_lm)
         self.exchanger_type = exchanger_type
         self.pressure = pressure
+        self.name = name # Used in the self.delete() function
 
         # Calculating costs
         Ac = self.area.to('ft**2').value
