@@ -585,7 +585,7 @@ class HENOS_objE_display(tk.Text):
             commandtext = str('displaying object ' + object_name + '...\n')
             self.insert('end', commandtext)
             if tag == 'stream':
-                displaytext = str(self.HEN_object.stream[object_name])
+                displaytext = str(self.HEN_object.streams[object_name])
             elif tag == 'hx':
                 displaytext = str(self.HEN_object.exchanger[object_name])
             elif tag == 'utility':
