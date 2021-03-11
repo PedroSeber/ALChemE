@@ -4,6 +4,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.markers import MarkerStyle
 import unyt
 from tkinter import ttk
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
@@ -404,9 +405,25 @@ class HEN:
         # Note: There may be issues if all streams on one side fully skip one or more intervals. Not sure how to test this properly.
         hot_index = np.concatenate(([True], np.sum(self._interval_heats[self.hot_streams&self.active_streams], axis = 0, dtype = np.bool))) # First value in the hot scale is defined as 0, so it's always True
         cold_index = np.concatenate(([True], np.sum(self._interval_heats[~self.hot_streams&self.active_streams], axis = 0, dtype = np.bool))) # First value in the cold scale is defined as the cold utility, so it's always True
-        ax2.plot(np.cumsum(self.enthalpy_hot[hot_index]), self._plotted_ylines[hot_index], '-or', linewidth = 0.25, ms = 1.5)
-        ax2.plot(np.cumsum(self.enthalpy_cold[cold_index]), self._plotted_ylines[cold_index] - self.delta_t.value, '-ob', linewidth = 0.25, ms = 1.5)
+        # Hot line
+        ax2.plot(np.cumsum(self.enthalpy_hot[hot_index][1:]), self._plotted_ylines[hot_index][1:], '-or', linewidth = 0.25, ms = 1.5)
+        # Cold line
+        ax2.plot(np.cumsum(self.enthalpy_cold[cold_index][:-1]), self._plotted_ylines[cold_index][:-1] - self.delta_t.value, '-ob', linewidth = 0.25, ms = 1.5)
         ax2.set_ylim(ax2.get_ylim()[0], ax2.get_ylim()[1] * 1.05) # Making the y-axis a little longer to avoid CC's overlapping with text
+
+        # Arrow markers at the end of each line, rotated to follow the line
+        ylim = ax2.get_ylim()
+        xlim = ax2.get_xlim()
+        # Hot arrow
+        dx = self.enthalpy_hot[hot_index][0]-self.enthalpy_hot[hot_index][1]
+        dy = self._plotted_ylines[hot_index][0]-self._plotted_ylines[hot_index][1]
+        ax2.arrow(self.enthalpy_hot[hot_index][1], self._plotted_ylines[hot_index][1], dx, dy, color = 'r', length_includes_head = True, 
+            linewidth = 0.25, head_width = (ylim[1]-ylim[0])*0.02, head_length = (xlim[1]-xlim[0])*0.01)
+        # Cold arrow
+        dx = np.cumsum(self.enthalpy_cold[cold_index])[-1] - np.cumsum(self.enthalpy_cold[cold_index])[-2]
+        dy = self._plotted_ylines[cold_index][-1]-self._plotted_ylines[cold_index][-2]
+        ax2.arrow(np.cumsum(self.enthalpy_cold[cold_index])[-2], self._plotted_ylines[cold_index][-2]-self.delta_t.value, dx, dy, color = 'b', length_includes_head = True,
+            linewidth = 0.25, head_width = (ylim[1]-ylim[0])*0.02, head_length = (xlim[1]-xlim[0])*0.01)
 
         # Text showing the utilities and overlap
         top_text_loc = ax2.get_ylim()[1] - 0.03*(ax2.get_ylim()[1] - ax2.get_ylim()[0])
