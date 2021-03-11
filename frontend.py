@@ -49,7 +49,7 @@ class HENOS_app():
         self.HENOS_si_frame = HENOS_stream_input(control_panel_Tab, self.HEN_object, self.HENOS_object_explorer)
         self.HENOS_ga_frame = HENOS_graphical_analysis_controls(control_panel_Tab, self.tabControl, self.HENOS_object_explorer, self.HEN_object)
         self.HENOS_uc_frame = HENOS_user_constraints(control_panel_Tab)
-        self.HENOS_os_frame = HENOS_optimization_controls(control_panel_Tab, self.HEN_object, self.HENOS_uc_frame)
+        self.HENOS_os_frame = HENOS_optimization_controls(control_panel_Tab, self.HEN_object, self.HENOS_object_explorer, self.HENOS_uc_frame)
 
         # Intialize dropdown menu options
         self.fileMenu = tk.Menu(self.HENOS_dropdown_menu, tearoff=0)
@@ -519,6 +519,7 @@ class HENOS_objE_tree(ttk.Treeview):
         HEN_selectedObject  = self.selection()[0]
         HEN_sO_name = self.item(HEN_selectedObject, 'text')
         self.delete(HEN_selectedObject)
+        self.HEN_object.delete(HEN_sO_name)
         
     def activate_deactivate_stream(self):
         HEN_selectedObject = self.selection()
@@ -574,6 +575,11 @@ class HENOS_objE_display(tk.Text):
         self.insert('end', '>>> ')
         #self.config(state='disabled')
     
+    def print2screen(self, message, newcommand):
+        self.insert('end', message + '\n')
+        if newcommand == True:
+            self.insert('end', '>>> ')
+    
     def printobj2screen(self, object_name, tag, tag2):
         if object_name not in ['STREAMS', 'HEAT EXCHANGERS', 'UTILITIES']:
             commandtext = str('displaying object ' + object_name + '...\n')
@@ -591,8 +597,10 @@ class HENOS_objE_display(tk.Text):
             self.insert('end', '>>> ')
             self.see('end')
     
-    def print2screen2(self, object_name):
+    def printsolutionmatrix(self, object_name):
+        self.insert('end', 'Solver has converged.\n')
         self.insert('end', object_name)
+        self.insert('end', '\n>>> ')
 
     def clearscreen(self):
         self.delete('1.0', 'end')
@@ -638,11 +646,12 @@ class HENOS_graphical_analysis_controls(ttk.Frame):
         self.HEN_object.make_tid(self.showT.get(), self.showP.get(), self.tabControl)
 
 class HENOS_optimization_controls(ttk.Frame):
-    def __init__(self, master, HEN_object, HEN_uC_explorer):
+    def __init__(self, master, HEN_object, HEN_object_explorer, HEN_uC_explorer):
         # Intialize fram properties
         ttk.Frame.__init__(self, master, padding='0.1i', relief='solid')
         
         self.HEN_object = HEN_object
+        self.HEN_object_explorer = HEN_object_explorer
         self.HEN_uC_explorer = HEN_uC_explorer
         self.input_entries = {}
         
@@ -722,6 +731,7 @@ class HENOS_optimization_controls(ttk.Frame):
         rhoButton.grid(row=8, column=2, pady=(50, 0))
         
     def run_optimization(self):
+        self.HEN_object_explorer.objectVisualizer.print2screen('Running HEN optimization method...', False)
         self.HEN_object.get_parameters()
         ucTree = self.HEN_uC_explorer.ucExplorer
         for constraint_type in ucTree.get_children():
@@ -729,10 +739,8 @@ class HENOS_optimization_controls(ttk.Frame):
                 dataVector = ucTree.item([constraint], 'values')
                 hot_stream = dataVector[0]
                 cold_stream = dataVector[1]
-                hot_streamidx = self.HEN_object.streams.iloc[self.HEN_object.hot_streams].index.get_loc(dataVector[0])
-                cold_streamidx = self.HEN_object.streams.iloc[self.HEN_object.cold_streams].index.get_loc(dataVector[1])
-                print(hot_streamidx)
-                print(cold_streamidx)
+                hot_streamidx = self.HEN_object.streams.iloc[self.HEN_object.hot_streams].index.get_loc(hot_stream) + len(self.HEN_object.hot_utilities)
+                cold_streamidx = self.HEN_object.streams.iloc[~self.HEN_object.hot_streams].index.get_loc(cold_stream) + len(self.HEN_object.cold_utilities)
                 # For heat transfer limit constraints (upper/lower)
                 if constraint_type == '0' or constraint_type == '1':
                     # Data sanitation for heat transfer limit units
@@ -744,17 +752,30 @@ class HENOS_optimization_controls(ttk.Frame):
                     else:
                         heatlimit = float(heatlimitraw[0])*unyt.BTU/unyt.s
                     # Place heat limit constraint into associated matrix
+                    if constraint_type == '0':
+                        self.HEN_object.upper_limit[hot_streamidx, cold_streamidx] = heatlimit
+                    elif constraint_type == '1':
+                        self.HEN_object.lower_limit[hot_streamidx, cold_streamidx] = heatlimit
                 # For stream matching constraints (forbidden/required)
-                #else:
+                else:
                     # Place heat limit constraint into associated matrix
-                    #if constraint_type == '2':
-                    #    self.HEN_object.upper_limit
-            print(ucTree.get_children([constraint_type]))
+                    if constraint_type == '2':
+                        self.HEN_object.forbidden[hot_streamidx, cold_streamidx] = True
+                    elif constraint_type == '3':
+                        self.HEN_object.required[hot_streamidx, cold_streamidx] = True
         
-        [matchLocs, heatLocs] = self.HEN_object.place_exchangers(pinch = str(self.pinchLoc.get()))
-        self.HEN_object_explorer.objectVisualizer.print2screen2('\n' + str(heatLocs))
+        # Check to ensure upper limit matrix is nonzero; if not, set to None
+        if np.count_nonzero(self.HEN_object.upper_limit) == 0:
+            self.HEN_object.upper_limit = None
+        
+        # NEED TO ADD CONSTRAINTS WITH UTILITIES
+        
+        [matchLocs, heatLocs] = self.HEN_object.place_exchangers(pinch = str(self.pinchLoc.get()), upper = self.HEN_object.upper_limit, lower = self.HEN_object.lower_limit, forbidden = self.HEN_object.forbidden, required = self.HEN_object.required)
+        self.HEN_object_explorer.objectVisualizer.printsolutionmatrix(str(heatLocs))
     
     def add_heat_limit(self):
+        errorFlag = False
+        
         raw_input = []
         for col in range(5):
             rawdata = self.input_entries[str([4, col])].get()
@@ -775,9 +796,14 @@ class HENOS_optimization_controls(ttk.Frame):
             self.HEN_uC_explorer.ucExplorer.add_ul_constraint(dataVec)
         else:
             self.HEN_uC_explorer.ucExplorer.add_ll_constraint(dataVec)
-            
+        
+        if errorFlag == False:
+            for col in [1, 2, 3]:
+                self.input_entries[str([4, col])].delete(0, 'end')
         
     def add_spec_match(self):
+        errorFlag = False
+        
         raw_input = []
         for col in range(3):
             rawdata = self.input_entries[str([7, col])].get()
@@ -790,6 +816,10 @@ class HENOS_optimization_controls(ttk.Frame):
             self.HEN_uC_explorer.ucExplorer.add_fm_constraint(dataVec)
         else:
             self.HEN_uC_explorer.ucExplorer.add_rm_constraint(dataVec)
+            
+        if errorFlag == False:
+            for col in [1, 2]:
+                self.input_entries[str([7, col])].delete(0, 'end')
         
 class HENOS_user_constraints(ttk.Frame):
     def __init__(self, master):
