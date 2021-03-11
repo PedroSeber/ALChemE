@@ -1,8 +1,10 @@
 # Jupyter notebook
 .ipynb_checkpoints
-.ipynb
+*.ipynb
 
 # PyInstaller folders
 build
 dist
 
+# Diagrams
+*.drawio
