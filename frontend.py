@@ -34,15 +34,7 @@ class HENOS_app():
         
         # Initialize tab systemos
         self.tabControl = ttk.Notebook(self.master, width=swidth, height=sheight)
-        
-        # Intialize dropdown menu options
-        self.fileMenu = tk.Menu(self.HENOS_dropdown_menu, tearoff=0)
-        self.fileMenu.add_command(label='New')
-        self.fileMenu.add_command(label='Open')
-        self.fileMenu.add_command(label='Save')
-        self.fileMenu.add_command(label='Save As')
-        self.HENOS_dropdown_menu.add_cascade(label='File', menu=self.fileMenu)
-        self.HENOS_dropdown_menu.add_cascade(label='Settings')
+    
         
         # Intialize control panel
         control_panel_Tab = ttk.Frame(self.tabControl)
@@ -50,14 +42,23 @@ class HENOS_app():
         self.tabControl.pack(expand=1, fill='both')
         
         # Initialize HEN object
-        HEN_object = HEN()
+        self.HEN_object = HEN()
         
         # Initialize control panel elements
-        self.HENOS_object_explorer = HENOS_object_explorer(control_panel_Tab, HEN_object)
-        self.HENOS_si_frame = HENOS_stream_input(control_panel_Tab, HEN_object, self.HENOS_object_explorer)
-        self.HENOS_ga_frame = HENOS_graphical_analysis_controls(control_panel_Tab, self.tabControl, self.HENOS_object_explorer, HEN_object)
-        self.HENOS_os_frame = HENOS_optimization_controls(control_panel_Tab)
+        self.HENOS_object_explorer = HENOS_object_explorer(control_panel_Tab, self.HEN_object)
+        self.HENOS_si_frame = HENOS_stream_input(control_panel_Tab, self.HEN_object, self.HENOS_object_explorer)
+        self.HENOS_ga_frame = HENOS_graphical_analysis_controls(control_panel_Tab, self.tabControl, self.HENOS_object_explorer, self.HEN_object)
         self.HENOS_uc_frame = HENOS_user_constraints(control_panel_Tab)
+        self.HENOS_os_frame = HENOS_optimization_controls(control_panel_Tab, self.HEN_object, self.HENOS_uc_frame)
+
+        # Intialize dropdown menu options
+        self.fileMenu = tk.Menu(self.HENOS_dropdown_menu, tearoff=0)
+        self.fileMenu.add_command(label='New')
+        self.fileMenu.add_command(label='Open', command=self.loadfile)
+        self.fileMenu.add_command(label='Save', command=self.savefile)
+        self.fileMenu.add_command(label='Save As', command=self.savefile)
+        self.HENOS_dropdown_menu.add_cascade(label='File', menu=self.fileMenu)
+        self.HENOS_dropdown_menu.add_cascade(label='Settings')
         
         # Placing control panel elements
         
@@ -73,6 +74,12 @@ class HENOS_app():
         
         self.HENOS_object_explorer.grid(row=3, column=0, rowspan=40, columnspan=8, sticky='nsew')
         self.HENOS_uc_frame.grid(row=4, column=9, sticky='nsew')
+    
+    def savefile(self):
+        self.HEN_object.save('alcheme_HEN')
+    
+    def loadfile(self):
+        self.HEN_object.load()
 
 class HENOS_stream_input(ttk.Frame):
     '''
@@ -91,7 +98,7 @@ class HENOS_stream_input(ttk.Frame):
                              'Outlet Temperature', '',
                              'Heat Capacity', '',
                              'Flow Rate', '', '', 'Heat Load', '']
-        self.HEN_exchanger_labels = ['Exchanger Name', 'Hot Stream', 'Cold Stream', '', 'Heat Load', '', 'Reference Stream', '', '', 'ΔT', '',
+        self.HEN_exchanger_labels = ['Exchanger Name', 'Hot Stream', 'Cold Stream', '', 'ΔT', '', 'Reference Stream', '', '', 'Heat Load', '',
                              '', 'Gauge Pressure', '',
                              'Exchanger Type', 'Cost Parameter A', 'Cost Parameter B']
         self.HEN_utility_labels = ['Utility Name', 'Utility Type', 'Temperature', '', 'Cost', '']
@@ -168,11 +175,11 @@ class HENOS_stream_input(ttk.Frame):
                         l = ttk.Label(self, text='OR', font=('Helvetica', 10, 'bold'))
                         l.grid(row=row, column=col, sticky='w')
                     elif col == 5:
-                        m = create_dropdown_menu(self, ['W', 'kcal/s', 'BTU/s'])
+                        m = create_dropdown_menu(self, ['°C', '°F', '°K'])
                         m[0].grid(row = row, column=col, sticky='w')
                         self.input_entries[str([row, col])] = m[1]
                     elif col == 10:
-                        m = create_dropdown_menu(self, ['°C', '°F', '°K'])
+                        m = create_dropdown_menu(self, ['W', 'kcal/s', 'BTU/s'])
                         m[0].grid(row = row, column=col, sticky='w')
                         self.input_entries[str([row, col])] = m[1]
                 elif row == 6:
@@ -248,8 +255,6 @@ class HENOS_stream_input(ttk.Frame):
             raw_input.append(rawdata)
             if col in [0, 1, 2, 4, 6, 9]:
                 self.input_entries[str([2, col])].delete(0, 'end')
-            
-        print(raw_input)
         
         # HEN object input data transfer, convert all numeric values to floats
         for ii in [1, 2, 4, 6, 8]:
@@ -297,6 +302,12 @@ class HENOS_stream_input(ttk.Frame):
         self.HEN_object.add_stream(t1 = raw_input[1], t2 = raw_input[2], cp = raw_input[4], flow_rate = raw_input[6], heat = raw_input[8], stream_name = raw_input[0], HENOS_oe_tree = self.HEN_object_explorer.objectExplorer, temp_unit = self.temp_unit, cp_unit = raw_input[5], flow_unit = raw_input[7], heat_unit = raw_input[9])    
 
     def add_exchanger(self):
+        # Define variables
+        errorFlag = False
+        
+        # Call get_parameters()
+        self.HEN_object.get_parameters()
+        
         # Populating raw input data vector
         raw_input = []
         for row in [5,7]:
@@ -305,30 +316,107 @@ class HENOS_stream_input(ttk.Frame):
                     rawdata = self.input_entries[str([5, col])].get()
                     if rawdata == '': rawdata = None
                     raw_input.append(rawdata)
-                    if col in [0, 1, 2, 4, 9]:
-                        self.input_entries[str([row, col])].delete(0, 'end')
             elif row == 7:
-                for col in [0, 1, 2, 4, 5]:
+                for col in [0, 1, 2, 4, 5, 6, 7]:
                     rawdata = self.input_entries[str([7, col])].get()
                     if rawdata == '': rawdata = None
                     raw_input.append(rawdata)
-                    if col in [1, 2, 4]:
-                        self.input_entries[str([row, col])].delete(0, 'end')
         
-        #self.HEN_object.add_exchanger(stream1 = self.HEN_object[raw_input[1]], stream2 = self.HEN_object[raw_input[1]], ref_stream = raw_input[4], delt_t = raw_input[6], exchanger_name = raw_input[0], exchanger_type = raw_input[8], cost_a = raw_input[9], cost_b = raw_input[10], pressure = raw_input[11], pressure_unit = raw_input[12])
+        # HEN object input data transfer, convert all numeric values to floats
+        for ii in [3, 6, 9, 10, 11, 13]:
+            try:
+                numericdata = float(raw_input[ii])
+                raw_input[ii] = numericdata
+            except TypeError:
+                continue
+        
+        # Check if Hot Stream and Cold Stream exist
+        streamList = self.HEN_object.streams.keys()
+        
+        if raw_input[1] not in streamList:
+            errorFlag = True
+            errorMessage = 'Hot stream ' + raw_input[1] + ' does not exist'
+        elif self.HEN_object.streams[raw_input[1]].stream_type != 'Hot':
+            errorFlag = True
+            errorMessage = 'Stream ' + raw_input[1] + ' is not a hot stream'
+        
+        if raw_input[2] not in streamList:
+            errorFlag = True
+            errorMessage = 'Cold stream ' + raw_input[2] + 'does not exist'
+        elif self.HEN_object.streams[raw_input[2]].stream_type != 'Cold':
+            errorFlag = True
+            errorMessage = 'Stream ' + raw_input[2] + ' is not a cold stream'
+        
+        # Convert temperature units into unyt
+        if raw_input[4] == '°C':
+            raw_input[4] = unyt.degC
+        elif raw_input[4] == '°F':
+            raw_input[4] = unyt.degF
+        else:
+            raw_input[4] = unyt.degK
+        
+        
+        # Convert heat load units into unyt
+        if raw_input[7] == 'W':
+            raw_input[7] = unyt.W
+        elif raw_input[7] == 'kcal/s':
+            raw_input[7] = unyt.kcal/unyt.s
+        else:
+            raw_input[7] = unyt.BTU/unyt.s
+        
+        # Convert pressure units into unyt
+        if raw_input[-3] == 'Pa':
+            raw_input[-3] = unyt.Pa
+        elif raw_input[-3] == 'psi':
+            raw_input[-3] = unyt.psi
+        
+        # Convert heat transfer coefficient units into unyt
+        if raw_input[-1] == 'J/(°C·m²·s)':
+            raw_input[-1] = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC)
+        
+        # Check if cost parameter A and B exist, set to 0
+        if raw_input[9] == None:
+            raw_input[9] = 0
+        if raw_input[10] == None:
+            raw_input[10] = 0
+        
+        # Check if pressure exists; if not, set to 0
+        if raw_input[11] == None:
+            raw_input[11] = 0
+        
+        # Convert reference stream to a number
+        if raw_input[5] == 'Hot':
+            raw_input[5] = 1
+        else:
+            raw_input[5] = 2
+        
+        # Submit exchanger to back end
+        self.HEN_object.add_exchanger(stream1 = raw_input[1], stream2 = raw_input[2], ref_stream = raw_input[5], t_in = raw_input[6], t_out=0, exchanger_name = raw_input[0], exchanger_type = raw_input[8], cost_a = raw_input[9], cost_b = raw_input[10], pressure = raw_input[11], pressure_unit = raw_input[12])
+        
+        # If there are no errors, clear all entries
+        if errorFlag == False:
+            for row5col in [0, 1, 2, 4, 9]:
+                self.input_entries[str([5, row5col])].delete(0, 'end')
+            for row7col in [1, 2, 4, 6]:
+                self.input_entries[str([7, row7col])].delete(0, 'end')
         
         print(raw_input)
         
     def add_utility(self):
+        errorFlag = False
+        
         raw_input = []
         for col in range(6):
             rawdata = self.input_entries[str([11, col])].get()
             if rawdata == '': rawdata = None
-            raw_input.append(rawdata)
-        print(raw_input)
+            raw_input.append(rawdata)        
         
-        self.HEN_object.add_utility(utility_type = raw_input[1], temperature = raw_input[2], cost = raw_input[4], utility_name = raw_input[0], temp_unit = raw_input[3], cost_unit = raw_input[5])
-
+        self.HEN_object.add_utility(utility_type = raw_input[1], temperature = float(raw_input[2]), cost = float(raw_input[4]), utility_name = raw_input[0], temp_unit = unyt.degC, HENOS_oe_tree = self.HEN_object_explorer.objectExplorer)#, cost_unit = raw_input[5])
+        
+        if errorFlag == False:
+            for row in [0, 2, 4]:
+                self.input_entries[str([11, row])].delete(0, 'end')
+        
 class HENOS_object_explorer(ttk.Frame):
     '''
     A class which holds the HENOS object explorer and visualizer. Slave of
@@ -344,7 +432,6 @@ class HENOS_object_explorer(ttk.Frame):
         # Initialize Object Explorer Label
         oeLabel = ttk.Label(self, text='Object Explorer', font=('Helvetica', 10, 'bold', 'underline'))
         oeLabel.grid(row=0, column=0, sticky='w')
-        
         
         
         # Initialize object visualizer label
@@ -376,40 +463,6 @@ class HENOS_object_explorer(ttk.Frame):
         self.objectExplorer.grid(row=1, column=0, rowspan=40, columnspan=8, padx=5, pady=(5,15), sticky='nsew')
         self.objectVisualizer.grid(row=42, column=0, rowspan=1, columnspan=8, padx=5, pady=(5,5), sticky='nsew')
 
-class HENOS_objE_display(tk.Text):
-    def __init__(self, master, HEN_object):
-        # Initialize text properties
-        tk.Text.__init__(self, master, highlightthickness=0)
-        
-        # Defining variables
-        self.HEN_object = HEN_object
-        
-        # Initialize vertical scrollbar
-        self.verscrlbar = ttk.Scrollbar(self, orient='vertical', command=self.yview)
-        self.verscrlbar.pack(side='right', fill='y')
-        self.configure(yscrollcommand=self.verscrlbar.set)
-    
-        # Initialize >>>
-        self.insert('end', '-'*54 + '***INITIALIZED***' + '-'*56 + '\n\n')
-        self.insert('end', '>>> ')
-        #self.config(state='disabled')
-    
-    def print2screen(self, object_name):
-        if object_name not in ['STREAMS', 'HEAT EXCHANGERS', 'UTILITIES']:
-            #self.config(state='normal')
-            commandtext = str('displaying object ' + object_name + '...\n')
-            self.insert('end', commandtext)
-            displaytext = str(self.HEN_object.streams[object_name])
-            self.insert('end', displaytext + '\n\n')
-            self.insert('end', '>>> ')
-            self.see('end')
-            #self.config(state='disabled')
-
-    def clearscreen(self):
-        self.delete('1.0', 'end')
-        self.insert('end', '-'*54 + '***INITIALIZED***' + '-'*56 + '\n\n')
-        self.insert('end', '>>> ')    
-
 class HENOS_objE_tree(ttk.Treeview):
     '''
     A class which holds the Treeview object which forms the basis of the
@@ -438,8 +491,8 @@ class HENOS_objE_tree(ttk.Treeview):
         
         # Intialize object classes in treeview
         self.StreamNode = self.insert('', index=0, iid=0, text='STREAMS', values=('Inlet Temperature', 'Outlet Temperature', 'Heat Capacity Rate', 'Heat Load', 'Status'))
-        self.HXNode = self.insert('', index=1, iid=1, text='HEAT EXCHANGERS')
-        self.UtilityNode = self.insert('', index=2, iid=2, text='UTILITIES')
+        self.HXNode = self.insert('', index=1, iid=1, text='HEAT EXCHANGERS', values=('Hot Stream', 'Cold Stream', 'Heat Exchange', 'FoB Cost', 'Status'))
+        self.UtilityNode = self.insert('', index=2, iid=2, text='UTILITIES', values=('Utility Type', 'Temperature', 'Cost', '', 'Status'))
         
         # Initialize 'Single Click' Event (Show Selected Object in Object Explorer)
         self.bind('<Button-1>', self.on_click)
@@ -456,10 +509,15 @@ class HENOS_objE_tree(ttk.Treeview):
     def receive_new_stream(self, oeDataVector):
         self.insert(self.StreamNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), str(oeDataVector[2]), str(oeDataVector[3]), str(oeDataVector[4]), 'Active'), tags='selectable')
         
+    def receive_new_exchanger(self, oeDataVector):
+        self.insert(self.HXNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), str(oeDataVector[2]), str(oeDataVector[3]), str(oeDataVector[4]), 'Active'), tags='selectable')
+    
+    def receive_new_utility(self, oeDataVector):
+        self.insert(self.UtilityNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), str(oeDataVector[2]), str(oeDataVector[3]), str(oeDataVector[4]), 'Active'), tags='selectable')
+    
     def delete_item(self):
         HEN_selectedObject  = self.selection()[0]
         HEN_sO_name = self.item(HEN_selectedObject, 'text')
-        del self.HEN_object.streams[HEN_sO_name]
         self.delete(HEN_selectedObject)
         
     def activate_deactivate_stream(self):
@@ -485,9 +543,61 @@ class HENOS_objE_tree(ttk.Treeview):
         HEN_selectedObject = self.selection()
         if HEN_selectedObject != ():
             HEN_sO_name = self.item(HEN_selectedObject, 'text')
-            self.master.objectVisualizer.print2screen(HEN_sO_name)
+            HEN_sO_parent_iid = self.parent(HEN_selectedObject[0])
+            tag2 = 0
+            
+            if self.item(HEN_sO_parent_iid, 'text') == 'STREAMS':
+                objID = 'stream'
+            elif self.item(HEN_sO_parent_iid, 'text') == 'HEAT EXCHANGERS':
+                objID = 'hx'
+            elif self.item(HEN_sO_parent_iid, 'text') == 'UTILITIES':
+                objID = 'utility'
+                tag2 = self.item(HEN_selectedObject, 'values')[0]
+            
+            self.master.objectVisualizer.printobj2screen(HEN_sO_name, objID, tag2)
+
+class HENOS_objE_display(tk.Text):
+    def __init__(self, master, HEN_object):
+        # Initialize text properties
+        tk.Text.__init__(self, master, highlightthickness=0)
         
+        # Defining variables
+        self.HEN_object = HEN_object
         
+        # Initialize vertical scrollbar
+        self.verscrlbar = ttk.Scrollbar(self, orient='vertical', command=self.yview)
+        self.verscrlbar.pack(side='right', fill='y')
+        self.configure(yscrollcommand=self.verscrlbar.set)
+    
+        # Initialize >>>
+        self.insert('end', '-'*65+ '***INITIALIZED***' + '-'*65 + '\n\n')
+        self.insert('end', '>>> ')
+        #self.config(state='disabled')
+    
+    def printobj2screen(self, object_name, tag, tag2):
+        if object_name not in ['STREAMS', 'HEAT EXCHANGERS', 'UTILITIES']:
+            commandtext = str('displaying object ' + object_name + '...\n')
+            self.insert('end', commandtext)
+            if tag == 'stream':
+                displaytext = str(self.HEN_object.stream[object_name])
+            elif tag == 'hx':
+                displaytext = str(self.HEN_object.exchanger[object_name])
+            elif tag == 'utility':
+                if tag2 == 'hot':
+                    displaytext = str(self.HEN_object.hot_utilities[object_name])
+                else:
+                    displaytext = str(self.HEN_object.cold_utilities[object_name])
+            self.insert('end', displaytext + '\n\n')
+            self.insert('end', '>>> ')
+            self.see('end')
+    
+    def print2screen2(self, object_name):
+        self.insert('end', object_name)
+
+    def clearscreen(self):
+        self.delete('1.0', 'end')
+        self.insert('end', '-'*65 + '***INITIALIZED***' + '-'*65 + '\n\n')
+        self.insert('end', '>>> ')    
 
 class HENOS_graphical_analysis_controls(ttk.Frame):
     def __init__(self, master, tabControl, object_explorer, HEN_object):
@@ -528,18 +638,22 @@ class HENOS_graphical_analysis_controls(ttk.Frame):
         self.HEN_object.make_tid(self.showT.get(), self.showP.get(), self.tabControl)
 
 class HENOS_optimization_controls(ttk.Frame):
-    def __init__(self, master):
+    def __init__(self, master, HEN_object, HEN_uC_explorer):
         # Intialize fram properties
         ttk.Frame.__init__(self, master, padding='0.1i', relief='solid')
-    
+        
+        self.HEN_object = HEN_object
+        self.HEN_uC_explorer = HEN_uC_explorer
+        self.input_entries = {}
+        
         # Initialize optimization suite label
         osLabel = ttk.Label(self, text='Optimization Suite', font=('Helvetica', 10, 'bold', 'underline'))
         osLabel.grid(row=0, column=0, sticky='nw')
         
         # Initialize above/below pinch radio buttons
-        pinchLoc = tk.StringVar()
-        abPinch = ttk.Radiobutton(self, text='Above Pinch', variable=pinchLoc, value='top')
-        blPinch = ttk.Radiobutton(self, text='Below Pinch', variable=pinchLoc, value='bottom')
+        self.pinchLoc = tk.StringVar()
+        abPinch = ttk.Radiobutton(self, text='Above Pinch', variable=self.pinchLoc, value='top')
+        blPinch = ttk.Radiobutton(self, text='Below Pinch', variable=self.pinchLoc, value='bottom')
         
         # Initialize heat limit entries
         htcLabel = ttk.Label(self, text='Heat Transfer Constraint', font=('TkDefaultFont', 9, 'italic', 'underline'))
@@ -552,27 +666,26 @@ class HENOS_optimization_controls(ttk.Frame):
         htcCold = ttk.Entry(self, width=12)
         htcEntry = ttk.Entry(self, width=12)
         htcUnits = create_dropdown_menu(self, ['W', 'kcal/s', 'BTU/s'])
-        htcButton = ttk.Button(self, text='Add Constraint')
+        htcButton = ttk.Button(self, text='Add Constraint', command=self.add_heat_limit)
         
         # Initialize forbidden/required matches
         frmLabel = ttk.Label(self, text='Stream Match Constraint', font=('TkDefaultFont', 9, 'italic', 'underline'))
         frmType = create_dropdown_menu(self, ['Forbidden', 'Required'])
-        #frmTypeL = ttk.Label(self, text='Type')
         frmHotL = ttk.Label(self, text='Hot Stream')
         frmColdL = ttk.Label(self, text='Cold Stream')
         frmHot = ttk.Entry(self, width=12)
         frmCold = ttk.Entry(self, width=12)
-        frmButton = ttk.Button(self, text='Add Constraint')
+        frmButton = ttk.Button(self, text='Add Constraint', command=self.add_spec_match)
         
         # Initialize 'Run HEN Optimization' button
-        rhoButton = ttk.Button(self, text='Run HEN Optimization')
+        rhoButton = ttk.Button(self, text='Run HEN Optimization', command=self.run_optimization)
         
-        # Place widgets
+        # Arrange radio button widgets
         abPinch.grid(row=1, column=0, pady=(15,15))
         blPinch.grid(row=1, column=2, pady=(15,15))
         
+        # Arrange heat transfer constraint widgets
         htcLabel.grid(row=3, column=0)
-        #htcTypeL.grid(row=3, column=0)
         htcHotL.grid(row=3, column=1, padx=10)
         htcColdL.grid(row=3, column=2, padx=10)
         htcEntryL.grid(row=3, column=3, padx=10)
@@ -583,8 +696,15 @@ class HENOS_optimization_controls(ttk.Frame):
         htcUnits[0].grid(row=4, column=4, sticky='w', padx=(0,10))
         htcButton.grid(row=4, column=5, padx=10)
         
+        # Assign values to heat transfer constraint input
+        self.input_entries[str([4, 0])] = htcType[1]
+        self.input_entries[str([4, 1])] = htcHot
+        self.input_entries[str([4, 2])] = htcCold
+        self.input_entries[str([4, 3])] = htcEntry
+        self.input_entries[str([4, 4])] = htcUnits[1]
+        
+        # Arrange forbidden/required matches constraint widgets
         frmLabel.grid(row=6, column=0, pady=(25,0))
-        #frmTypeL.grid(row=6, column=0)
         frmHotL.grid(row=6, column=1, padx=10, pady=(25,0))
         frmColdL.grid(row=6, column=2, padx=10, pady=(25,0))
         frmType[0].grid(row=7, column=0, padx=10)
@@ -592,8 +712,84 @@ class HENOS_optimization_controls(ttk.Frame):
         frmCold.grid(row=7, column=2, padx=10)
         frmButton.grid(row=7, column=5, padx=10)
         
+        # Assign values to forbidden/required matches constraint input
+        self.input_entries[str([7, 0])] = frmType[1]
+        self.input_entries[str([7, 1])] = frmHot
+        self.input_entries[str([7, 2])] = frmCold
+
+        # Place 'Run HEN Optimization' button        
         self.columnconfigure(2, weight=1)
         rhoButton.grid(row=8, column=2, pady=(50, 0))
+        
+    def run_optimization(self):
+        self.HEN_object.get_parameters()
+        ucTree = self.HEN_uC_explorer.ucExplorer
+        for constraint_type in ucTree.get_children():
+            for constraint in ucTree.get_children([constraint_type]):
+                dataVector = ucTree.item([constraint], 'values')
+                hot_stream = dataVector[0]
+                cold_stream = dataVector[1]
+                hot_streamidx = self.HEN_object.streams.iloc[self.HEN_object.hot_streams].index.get_loc(dataVector[0])
+                cold_streamidx = self.HEN_object.streams.iloc[self.HEN_object.cold_streams].index.get_loc(dataVector[1])
+                print(hot_streamidx)
+                print(cold_streamidx)
+                # For heat transfer limit constraints (upper/lower)
+                if constraint_type == '0' or constraint_type == '1':
+                    # Data sanitation for heat transfer limit units
+                    heatlimitraw = dataVector[2].strip().split()
+                    if heatlimitraw[1] == 'W':
+                        heatlimit = float(heatlimitraw[0])*unyt.W
+                    elif heatlimitraw[1] == 'kcal/s':
+                        heatlimit = float(heatlimitraw[0])*unyt.cal/unyt.s
+                    else:
+                        heatlimit = float(heatlimitraw[0])*unyt.BTU/unyt.s
+                    # Place heat limit constraint into associated matrix
+                # For stream matching constraints (forbidden/required)
+                #else:
+                    # Place heat limit constraint into associated matrix
+                    #if constraint_type == '2':
+                    #    self.HEN_object.upper_limit
+            print(ucTree.get_children([constraint_type]))
+        
+        [matchLocs, heatLocs] = self.HEN_object.place_exchangers(pinch = str(self.pinchLoc.get()))
+        self.HEN_object_explorer.objectVisualizer.print2screen2('\n' + str(heatLocs))
+    
+    def add_heat_limit(self):
+        raw_input = []
+        for col in range(5):
+            rawdata = self.input_entries[str([4, col])].get()
+            if rawdata == '': rawdata = None
+            raw_input.append(rawdata)
+        
+        # Convert power units to unyt
+        if raw_input[4] == 'W':
+            raw_input[4] = unyt.W
+        elif raw_input[4] == 'kcal/s':
+            raw_input[4] = unyt.kcal/unyt.s
+        else:
+            raw_input[4] = unyt.BTU/unyt.s
+
+        dataVec = [raw_input[1], raw_input[2], float(raw_input[3])*raw_input[4]]
+        
+        if raw_input[0] == 'Upper Limit':
+            self.HEN_uC_explorer.ucExplorer.add_ul_constraint(dataVec)
+        else:
+            self.HEN_uC_explorer.ucExplorer.add_ll_constraint(dataVec)
+            
+        
+    def add_spec_match(self):
+        raw_input = []
+        for col in range(3):
+            rawdata = self.input_entries[str([7, col])].get()
+            if rawdata == '': rawdata = None
+            raw_input.append(rawdata)
+        
+        dataVec = [raw_input[1], raw_input[2]]
+        
+        if raw_input[0] == 'Forbidden':
+            self.HEN_uC_explorer.ucExplorer.add_fm_constraint(dataVec)
+        else:
+            self.HEN_uC_explorer.ucExplorer.add_rm_constraint(dataVec)
         
 class HENOS_user_constraints(ttk.Frame):
     def __init__(self, master):
@@ -603,6 +799,13 @@ class HENOS_user_constraints(ttk.Frame):
         # Initialize user constraints label
         ucLabel = ttk.Label(self, text='User Constraints', font=('Helvetica', 10, 'bold', 'underline'))
         ucLabel.grid(row=0, column=0, sticky='nw')
+        
+        self.dcButton = ttk.Button(self, text='Delete Constraint')
+        self.adcButton = ttk.Button(self, text='Activate/Deactivate Constraint')
+        
+        self.columnconfigure(1, weight=1)
+        self.dcButton.grid(row=0, column=3)
+        self.adcButton.grid(row=0, column=2)
         
         #
         self.ucExplorer = HENOS_uC_tree(self)
@@ -624,9 +827,9 @@ class HENOS_uC_tree(ttk.Treeview):
         style = ttk.Style()
         style.layout("Treeview", [('Treeview.treearea', {'sticky': 'nswe'})])
         self['columns'] = ('1', '2', '3')
-        self.column('1', width=170)
-        self.column('2', width=170)
-        self.column('3', width=170)
+        self.column('1', width=150)
+        self.column('2', width=150)
+        self.column('3', width=150)
         
         # Defining variables
         self.master = master
@@ -637,14 +840,25 @@ class HENOS_uC_tree(ttk.Treeview):
         self.configure(yscrollcommand=self.verscrlbar.set)
         
         # Intialize object classes in treeview
-        self.ulNode = self.insert('', index=0, iid=0, text='UPPER LIMIT')
-        self.llNode = self.insert('', index=2, iid=1, text='LOWER LIMIT')
-        self.fmNode = self.insert('', index=2, iid=2, text='FORBIDDEN MATCHES')
-        self.rmNode = self.insert('', index=3, iid=3, text='REQUIRED MATCHES')
+        self.ulNode = self.insert('', index=0, iid=0, text='UPPER LIMIT', values=('Hot Stream', 'Cold Stream', 'Upper Heat Limit'))
+        self.llNode = self.insert('', index=2, iid=1, text='LOWER LIMIT', values=('Hot Stream', 'Cold Stream', 'Lower Heat Limit'))
+        self.fmNode = self.insert('', index=2, iid=2, text='FORBIDDEN MATCHES', values=('Hot Stream', 'Cold Stream'))
+        self.rmNode = self.insert('', index=3, iid=3, text='REQUIRED MATCHES', values=('Hot Stream', 'Cold Stream'))
         
         # Initialize 'Single Click' Event (Show Selected Object in Object Explorer)
         #self.bind('<Button-1>', self.on_click)
         #self.bind("<Double-Button-1>", self.send2screen)
+    def add_ul_constraint(self, constraint_data):
+        self.insert(self.ulNode, 'end', text='', values=(str(constraint_data[0]), str(constraint_data[1]), str(constraint_data[2])), tags='selectable')
+        
+    def add_ll_constraint(self, constraint_data):
+        self.insert(self.llNode, 'end', text='', values=(str(constraint_data[0]), str(constraint_data[1]), str(constraint_data[2])), tags='selectable')
+        
+    def add_fm_constraint(self, constraint_data):
+        self.insert(self.fmNode, 'end', text='', values=(str(constraint_data[0]), str(constraint_data[1])), tags='selectable')
+        
+    def add_rm_constraint(self, constraint_data):
+        self.insert(self.rmNode, 'end', text='', values=(str(constraint_data[0]), str(constraint_data[1])), tags='selectable')
 
 # FUNCTIONS
 def create_dropdown_menu(master, options):
