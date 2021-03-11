@@ -446,7 +446,7 @@ class HENOS_object_explorer(ttk.Frame):
         self.objectVisualizer = HENOS_objE_display(self, self.HEN_object)
         
         # Initialize object explorer control buttons
-        self.delete_stream = ttk.Button(self, text='Delete Stream', command=self.objectExplorer.delete_item)
+        self.delete_stream = ttk.Button(self, text='Delete Object', command=self.objectExplorer.delete_item)
         self.activate_deactivate_stream = ttk.Button(self, text='Activate/Deactivate Stream', command=self.objectExplorer.activate_deactivate_stream)
         self.delete_stream.grid(row=0, column=3, padx=5)
         self.activate_deactivate_stream.grid(row=0, column=2, padx=5)
@@ -854,7 +854,7 @@ class HENOS_user_constraints(ttk.Frame):
         
         self.columnconfigure(1, weight=1)
         self.dcButton.grid(row=0, column=3)
-        self.adcButton.grid(row=0, column=2)                
+        #self.adcButton.grid(row=0, column=2)                
         
         self.rowconfigure(1, weight=1)
         self.columnconfigure(0, weight=1)
