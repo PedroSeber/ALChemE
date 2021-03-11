@@ -159,14 +159,17 @@ class HEN:
             cost = cost.to(1/self.heat_unit)
         
         if utility_name is None:
+            idx = 1
             if utility_type == 'hot': # Hot utility
                 letter = 'HU'
+                while f'{letter}{idx}' in self.hot_utilities.keys():
+                    idx += 1
             else: # Cold utility
                 letter = 'CU'
-            idx = 1
-            while f'{letter}{idx}' in self.streams.keys():
-                idx += 1
+                while f'{letter}{idx}' in self.cold_utilities.keys():
+                    idx += 1
             utility_name = f'{letter}{idx}'
+            
         
         # Generating the utility object and adding it to the HEN object
         temp = pd.Series(Utility(utility_type, temperature, cost), [utility_name])
