@@ -207,7 +207,7 @@ class HENOS_stream_input(ttk.Frame):
                             m[0].grid(row = row, column=col, sticky='w')
                             self.input_entries[str([row, col])] = m[1]
                         elif col == 7:
-                            m = create_dropdown_menu(self, ['Test'])
+                            m = create_dropdown_menu(self, ['J/(m²·s·°C)'])
                             m[0].grid(row = row, column=col, sticky='w')
                             self.input_entries[str([row, col])] = m[1]
                             
@@ -335,17 +335,17 @@ class HENOS_stream_input(ttk.Frame):
         
         if raw_input[1] not in streamList:
             errorFlag = True
-            errorMessage = 'Hot stream ' + raw_input[1] + ' does not exist'
+            errorMessage = 'ERROR: Hot stream ' + raw_input[1] + ' does not exist'
         elif self.HEN_object.streams[raw_input[1]].stream_type != 'Hot':
             errorFlag = True
-            errorMessage = 'Stream ' + raw_input[1] + ' is not a hot stream'
+            errorMessage = 'ERROR: Stream ' + raw_input[1] + ' is not a hot stream'
         
         if raw_input[2] not in streamList:
             errorFlag = True
-            errorMessage = 'Cold stream ' + raw_input[2] + 'does not exist'
+            errorMessage = 'ERROR: Cold stream ' + raw_input[2] + 'does not exist'
         elif self.HEN_object.streams[raw_input[2]].stream_type != 'Cold':
             errorFlag = True
-            errorMessage = 'Stream ' + raw_input[2] + ' is not a cold stream'
+            errorMessage = 'ERROR: Stream ' + raw_input[2] + ' is not a cold stream'
         
         # Convert temperature units into unyt
         if raw_input[4] == '°C':
@@ -354,7 +354,6 @@ class HENOS_stream_input(ttk.Frame):
             raw_input[4] = unyt.degF
         else:
             raw_input[4] = unyt.degK
-        
         
         # Convert heat load units into unyt
         if raw_input[7] == 'W':
@@ -371,7 +370,7 @@ class HENOS_stream_input(ttk.Frame):
             raw_input[-3] = unyt.psi
         
         # Convert heat transfer coefficient units into unyt
-        if raw_input[-1] == 'J/(°C·m²·s)':
+        if raw_input[-1] == 'J/(m²·s·°C)':
             raw_input[-1] = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC)
         
         # Check if cost parameter A and B exist, set to 0
@@ -390,15 +389,17 @@ class HENOS_stream_input(ttk.Frame):
         else:
             raw_input[5] = 2
         
-        # Submit exchanger to back end
-        self.HEN_object.add_exchanger(stream1 = raw_input[1], stream2 = raw_input[2], ref_stream = raw_input[5], t_in = raw_input[6], t_out=0, exchanger_name = raw_input[0], exchanger_type = raw_input[8], cost_a = raw_input[9], cost_b = raw_input[10], pressure = raw_input[11], pressure_unit = raw_input[12])
-        
-        # If there are no errors, clear all entries
+        # If there are no errors, clear all entries, submit to HEN object
         if errorFlag == False:
             for row5col in [0, 1, 2, 4, 9]:
                 self.input_entries[str([5, row5col])].delete(0, 'end')
             for row7col in [1, 2, 4, 6]:
                 self.input_entries[str([7, row7col])].delete(0, 'end')
+            self.HEN_object.add_exchanger(stream1 = raw_input[1], stream2 = raw_input[2], ref_stream = raw_input[5], exchanger_delta_t = raw_input[6], exchanger_name = raw_input[0], exchanger_type = raw_input[8], cost_a = raw_input[9], cost_b = raw_input[10], pressure = raw_input[11], pressure_unit = raw_input[12])
+
+        # If there is an error, print the errorFlag
+        if errorFlag == True:
+            self.HEN_object_explorer.objectVisualizer.print2screen(errorMessage, True)
         
         print(raw_input)
         
@@ -739,18 +740,32 @@ class HENOS_optimization_controls(ttk.Frame):
                 dataVector = ucTree.item([constraint], 'values')
                 hot_stream = dataVector[0]
                 cold_stream = dataVector[1]
-                hot_streamidx = self.HEN_object.streams.iloc[self.HEN_object.hot_streams].index.get_loc(hot_stream) + len(self.HEN_object.hot_utilities)
-                cold_streamidx = self.HEN_object.streams.iloc[~self.HEN_object.hot_streams].index.get_loc(cold_stream) + len(self.HEN_object.cold_utilities)
+                
+                streamList = self.HEN_object.streams.keys()
+                hotutilityList = self.HEN_object.hot_utilities.keys()
+                coldutilityList = self.HEN_object.cold_utilities.keys()
+                
+                if hot_stream in streamList:
+                    hot_streamidx = self.HEN_object.streams.iloc[self.HEN_object.hot_streams].index.get_loc(hot_stream) + len(self.HEN_object.hot_utilities)
+                elif hot_stream in hotutilityList:
+                    hot_streamidx = self.HEN_object.hot_utilities.index.get_loc(hot_stream)
+                    
+                if cold_stream in streamList:
+                    cold_streamidx = self.HEN_object.streams.iloc[~self.HEN_object.hot_streams].index.get_loc(cold_stream) + len(self.HEN_object.cold_utilities)
+                elif cold_stream in coldutilityList:
+                    cold_streamidx = self.HEN_object.cold_utilities.index.get_loc(cold_stream)
+                
                 # For heat transfer limit constraints (upper/lower)
                 if constraint_type == '0' or constraint_type == '1':
                     # Data sanitation for heat transfer limit units
                     heatlimitraw = dataVector[2].strip().split()
-                    if heatlimitraw[1] == 'W':
-                        heatlimit = float(heatlimitraw[0])*unyt.W
-                    elif heatlimitraw[1] == 'kcal/s':
-                        heatlimit = float(heatlimitraw[0])*unyt.cal/unyt.s
-                    else:
-                        heatlimit = float(heatlimitraw[0])*unyt.BTU/unyt.s
+                    heatlimit = heatlimitraw[0]
+                    #if heatlimitraw[1] == 'W':
+                        #heatlimit = float(heatlimitraw[0])*unyt.W
+                    #elif heatlimitraw[1] == 'kcal/s':
+                        #heatlimit = float(heatlimitraw[0])*unyt.cal/unyt.s
+                    #else:
+                        #heatlimit = float(heatlimitraw[0])*unyt.BTU/unyt.s
                     # Place heat limit constraint into associated matrix
                     if constraint_type == '0':
                         self.HEN_object.upper_limit[hot_streamidx, cold_streamidx] = heatlimit
@@ -763,6 +778,7 @@ class HENOS_optimization_controls(ttk.Frame):
                         self.HEN_object.forbidden[hot_streamidx, cold_streamidx] = True
                     elif constraint_type == '3':
                         self.HEN_object.required[hot_streamidx, cold_streamidx] = True
+        print(self.HEN_object.upper_limit)
         
         # Check to ensure upper limit matrix is nonzero; if not, set to None
         if np.count_nonzero(self.HEN_object.upper_limit) == 0:
@@ -792,9 +808,9 @@ class HENOS_optimization_controls(ttk.Frame):
 
         dataVec = [raw_input[1], raw_input[2], float(raw_input[3])*raw_input[4]]
         
-        if raw_input[0] == 'Upper Limit':
+        if raw_input[0] == 'Upper Limit' and raw_input[1] != 'ALL':
             self.HEN_uC_explorer.ucExplorer.add_ul_constraint(dataVec)
-        else:
+        elif raw_input[0] == 'Lower Limit' and raw_input[1] != 'ALL':
             self.HEN_uC_explorer.ucExplorer.add_ll_constraint(dataVec)
         
         if errorFlag == False:
@@ -838,11 +854,7 @@ class HENOS_user_constraints(ttk.Frame):
         
         self.columnconfigure(1, weight=1)
         self.dcButton.grid(row=0, column=3)
-        self.adcButton.grid(row=0, column=2)
-        
-        #
-        
-        
+        self.adcButton.grid(row=0, column=2)                
         
         self.rowconfigure(1, weight=1)
         self.columnconfigure(0, weight=1)
