@@ -137,7 +137,7 @@ class HEN:
         else:
             raise TypeError('The streams_to_change parameter should be a string or list/tuple/set of strings')
     
-    def add_utility(self, utility_type, temperature, cost = 0, utility_name = None, temp_unit = None, cost_unit = None):
+    def add_utility(self, utility_type, temperature, cost = 0, utility_name = None, temp_unit = None, cost_unit = None, HENOS_oe_tree = None):
         if utility_type.casefold() in {'hot', 'hot utility', 'h', 'hu'}:
             utility_type = 'hot'
         elif utility_type.casefold() in {'cold', 'cold utility', 'c', 'cu'}:
@@ -174,6 +174,10 @@ class HEN:
             self.hot_utilities = pd.concat([self.hot_utilities, temp])
         else: # Cold utility
             self.cold_utilities = pd.concat([self.cold_utilities, temp])
+            
+        if HENOS_oe_tree is not None:
+            oeDataVector = [utility_name, utility_type, temperature, cost, '', 'Active']
+            HENOS_oe_tree.receive_new_utility(oeDataVector)            
     
     def delete(self, obj_to_del):
         if obj_to_del in self.hot_utilities: # More will be added once exchangers to utilities get implemented
@@ -684,7 +688,7 @@ class HEN:
 
 
     def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, exchanger_delta_t = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), 
-        exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0, pressure_unit = unyt.Pa):
+        exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0, pressure_unit = unyt.Pa, HENOS_oe_tree = None):
 
         # General data validation
         if exchanger_type.casefold() in {'fixed head', 'fixed', 'fixed-head'}:
@@ -825,6 +829,12 @@ class HEN:
         self.streams[stream1].connected_exchangers.append(exchanger_name) # Used when the stream is deleted
         self.streams[stream2].connected_exchangers.append(exchanger_name)
         
+        # 
+        if HENOS_oe_tree is not None:
+            oeDataVector = [exchanger_name, stream1, stream2, heat, self.exchangers[exchanger_name].cost_fob, 'Active']
+            print(oeDataVector)
+            HENOS_oe_tree.receive_new_exchanger(oeDataVector)
+        
     def save(self, name, overwrite = False):
         if "." in name:
             file_name = name
@@ -904,16 +914,18 @@ class Stream():
         if self.t1 > self.t2: # Hot stream
             self.current_t_above = self.t1
             self.current_t_below = None # Will be updated once pinch point is found
+            self.stream_type = 'Hot'
         else: # Cold stream
             self.current_t_above = None
             self.current_t_below = self.t1
+            self.stream_type = 'Cold'
     
     def __repr__(self):
         if self.t1 > self.t2:
             stream_type = 'Hot'
         else:
             stream_type = 'Cold'
-        text =(f'{stream_type} stream with T_in = {self.t1} and T_out = {self.t2}'
+        text =(f'{stream_type} stream with T_in = {self.t1} and T_out = {self.t2}\n'
              f'c_p = {self.cp} and flow rate = {self.flow_rate}\n')
         if self.q_above is not None:
             text += f'Above pinch: {self.q_above} total, {self.q_above_remaining:.6g} remaining, T = {self.current_t_above:.4g}\n'
