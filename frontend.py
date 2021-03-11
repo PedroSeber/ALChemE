@@ -830,7 +830,10 @@ class HENOS_user_constraints(ttk.Frame):
         ucLabel = ttk.Label(self, text='User Constraints', font=('Helvetica', 10, 'bold', 'underline'))
         ucLabel.grid(row=0, column=0, sticky='nw')
         
-        self.dcButton = ttk.Button(self, text='Delete Constraint')
+        
+        self.ucExplorer = HENOS_uC_tree(self)
+        
+        self.dcButton = ttk.Button(self, text='Delete Constraint', command=self.ucExplorer.delete_constraint)
         self.adcButton = ttk.Button(self, text='Activate/Deactivate Constraint')
         
         self.columnconfigure(1, weight=1)
@@ -838,7 +841,7 @@ class HENOS_user_constraints(ttk.Frame):
         self.adcButton.grid(row=0, column=2)
         
         #
-        self.ucExplorer = HENOS_uC_tree(self)
+        
         
         
         self.rowconfigure(1, weight=1)
@@ -876,8 +879,17 @@ class HENOS_uC_tree(ttk.Treeview):
         self.rmNode = self.insert('', index=3, iid=3, text='REQUIRED MATCHES', values=('Hot Stream', 'Cold Stream'))
         
         # Initialize 'Single Click' Event (Show Selected Object in Object Explorer)
-        #self.bind('<Button-1>', self.on_click)
+        self.bind('<Button-1>', self.on_click)
         #self.bind("<Double-Button-1>", self.send2screen)
+        
+    def on_click(self, event):
+        tree = event.widget
+        item_name = tree.identify_row(event.y)
+        if item_name:
+            tags = tree.item(item_name, 'tags')
+            if tags and (tags[0] == 'selectable'):
+                tree.selection_set(item_name)
+    
     def add_ul_constraint(self, constraint_data):
         self.insert(self.ulNode, 'end', text='', values=(str(constraint_data[0]), str(constraint_data[1]), str(constraint_data[2])), tags='selectable')
         
@@ -889,7 +901,12 @@ class HENOS_uC_tree(ttk.Treeview):
         
     def add_rm_constraint(self, constraint_data):
         self.insert(self.rmNode, 'end', text='', values=(str(constraint_data[0]), str(constraint_data[1])), tags='selectable')
-
+    
+    def delete_constraint(self):
+        HEN_selectedConstraint  = self.selection()[0]
+        HEN_sC_name = self.item(HEN_selectedConstraint, 'text')
+        self.delete(HEN_selectedConstraint)
+        
 # FUNCTIONS
 def create_dropdown_menu(master, options):
     var = tk.StringVar(master)
