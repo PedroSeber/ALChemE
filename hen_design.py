@@ -522,22 +522,26 @@ class HEN:
             for intervalidx in range(1, residuals.shape[1] - 1):
                 if rowidx < len(self.hot_utilities) and (pinch == 'below' or self.first_utility == 0): # No hot utilities are used below pinch
                     residuals[rowidx, intervalidx] = m.Const(0, f'R_{rowidx}{intervalidx}')
-                elif pinch == 'above' and np.sum(self._interval_heats[self.active_streams][hot_stidx, -num_of_intervals:]) == 0: # Stream isn't present above pinch
+                elif pinch == 'above' and np.sum(self._interval_heats[self.hot_streams&self.active_streams][hot_stidx, -num_of_intervals:]) == 0: # Stream isn't present above pinch
                     residuals[rowidx, intervalidx] = m.Const(0, f'R_{rowidx}{intervalidx}')
-                elif pinch == 'below' and np.sum(self._interval_heats[self.active_streams][hot_stidx, :num_of_intervals]) == 0: # Stream isn't present below pinch
+                elif pinch == 'below' and np.sum(self._interval_heats[self.hot_streams&self.active_streams][hot_stidx, :num_of_intervals]) == 0: # Stream isn't present below pinch
                     residuals[rowidx, intervalidx] = m.Const(0, f'R_{rowidx}{intervalidx}')
                 else:
                     residuals[rowidx, intervalidx] = m.Var(0, lb = 0, name = f'R_{rowidx}{intervalidx}')
+            if rowidx >= len(self.hot_utilities): # Increase hot stream counter iff colidx represents a stream and not a utility
+                hot_stidx += 1
         residuals = np.fliplr(residuals) # R_X0 is above the highest interval, R_X1 is the highest interval, and so on
 
         # Q_exchanger is how much heat each exchanger will transfer
         # First N rows of Q_exchanger are the N hot utilities; first M columns are the M cold utilities
         Q_exchanger = np.zeros((np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), 
             np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities), num_of_intervals ), dtype = np.object) # Hot streams, cold streams, and intervals
+        Q_exc_tot = np.zeros((Q_exchanger.shape[:2]), dtype = np.object)
         hot_stidx = 0 # Used to iterate over streams via self._interval_heats
         for rowidx in range(Q_exchanger.shape[0]):
             cold_stidx = 0
             for colidx in range(Q_exchanger.shape[1]):
+                has_variable = 0 # Used to generate Q_exchanger_tot intermediates
                 for intervalidx in range(Q_exchanger.shape[2]):
                     if rowidx < len(self.hot_utilities) and (pinch == 'below' or self.first_utility == 0): # No hot utilities are used below pinch
                         Q_exchanger[rowidx, colidx, intervalidx] = m.Const(0, f'Q_{rowidx}{colidx}{intervalidx+1}')
@@ -545,28 +549,32 @@ class HEN:
                         Q_exchanger[rowidx, colidx, intervalidx] = m.Const(0, f'Q_{rowidx}{colidx}{intervalidx+1}')
                     elif rowidx < len(self.hot_utilities) and colidx < len(self.cold_utilities): # No matches between utilities
                         Q_exchanger[rowidx, colidx, intervalidx] = m.Const(0, f'Q_{rowidx}{colidx}{intervalidx+1}')
-                    elif pinch == 'above' and ( # Stream isn't present above pinch
-                    np.sum(self._interval_heats[self.active_streams][hot_stidx, -num_of_intervals:]) == 0 or
-                    np.sum(self._interval_heats[self.active_streams][np.sum(self.hot_streams&self.active_streams)+cold_stidx, -num_of_intervals:]) == 0):
+                    elif rowidx < len(self.hot_utilities) and pinch == 'above' and ( # Hot utility and cold stream, but cold stream not present above pinch
+                    np.sum(self._interval_heats[~self.hot_streams&self.active_streams][cold_stidx, -num_of_intervals:]) == 0):
                         Q_exchanger[rowidx, colidx, intervalidx] = m.Const(0, f'Q_{rowidx}{colidx}{intervalidx+1}')
-                    elif pinch == 'below' and ( # Stream isn't present below pinch
-                    np.sum(self._interval_heats[self.active_streams][hot_stidx, :num_of_intervals]) == 0 or
-                    np.sum(self._interval_heats[self.active_streams][np.sum(self.hot_streams&self.active_streams)+cold_stidx, :num_of_intervals]) == 0):
+                    elif colidx < len(self.cold_utilities) and pinch == 'below' and ( # Cold utility and hot stream, but hot stream not present below pinch
+                    np.sum(self._interval_heats[self.hot_streams&self.active_streams][hot_stidx, :num_of_intervals]) == 0):
+                        Q_exchanger[rowidx, colidx, intervalidx] = m.Const(0, f'Q_{rowidx}{colidx}{intervalidx+1}')
+                    elif rowidx >= len(self.hot_utilities) and pinch == 'above' and ( # Match between streams, but at least one isn't present above pinch
+                    np.sum(self._interval_heats[self.hot_streams&self.active_streams][hot_stidx, -num_of_intervals:]) == 0 or
+                    np.sum(self._interval_heats[~self.hot_streams&self.active_streams][cold_stidx, -num_of_intervals:]) == 0):
+                        Q_exchanger[rowidx, colidx, intervalidx] = m.Const(0, f'Q_{rowidx}{colidx}{intervalidx+1}')
+                    elif colidx >= len(self.cold_utilities) and pinch == 'below' and ( # Match between streams, but at least one isn't present above pinch
+                    np.sum(self._interval_heats[self.hot_streams&self.active_streams][hot_stidx, :num_of_intervals]) == 0 or
+                    np.sum(self._interval_heats[~self.hot_streams&self.active_streams][cold_stidx, :num_of_intervals]) == 0):
                         Q_exchanger[rowidx, colidx, intervalidx] = m.Const(0, f'Q_{rowidx}{colidx}{intervalidx+1}')
                     elif forbidden[rowidx, colidx]:
                         Q_exchanger[rowidx, colidx, intervalidx] = m.Const(0, f'Q_{rowidx}{colidx}{intervalidx+1}')
-                    else: # Match involves at least one stream
+                    else: # Valid match
                         Q_exchanger[rowidx, colidx, intervalidx] = m.Var(0, lb = 0, name = f'Q_{rowidx}{colidx}{intervalidx+1}')
+                        has_variable += 1
+                if has_variable:
+                    Q_exc_tot[rowidx, colidx] = m.Intermediate(m.sum(Q_exchanger[rowidx, colidx, :]), f'Q_tot_{rowidx}{colidx}')
                 if colidx >= len(self.cold_utilities): # Increase cold stream counter iff colidx represents a stream and not a utility
                     cold_stidx += 1
             if rowidx >= len(self.hot_utilities): # Increase hot stream counter iff colidx represents a stream and not a utility
                 hot_stidx += 1
         Q_exchanger = Q_exchanger[:, :, ::-1] #Q_XX1 is the highest interval, Q_XX2 is the 2nd highest, and so on
-
-        Q_exc_tot = np.zeros((Q_exchanger.shape[:2]), dtype = np.object)
-        for rowidx in range(Q_exchanger.shape[0]):
-            for colidx in range(Q_exchanger.shape[1]):
-                Q_exc_tot[rowidx, colidx] = m.Intermediate(m.sum(Q_exchanger[rowidx, colidx, :]), f'Q_tot_{rowidx}{colidx}')
 
         matches = np.zeros_like(Q_exc_tot, dtype = np.object) # Whether there is a heat exchanger between two streams
         hot_stidx = 0 # Used to iterate over streams via self._interval_heats
@@ -579,13 +587,19 @@ class HEN:
                     matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
                 elif rowidx < len(self.hot_utilities) and colidx < len(self.cold_utilities): # No matches between utilities
                     matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
-                elif pinch == 'above' and ( # Stream isn't present above pinch
-                np.sum(self._interval_heats[self.active_streams][hot_stidx, -num_of_intervals:]) == 0 or
-                np.sum(self._interval_heats[self.active_streams][np.sum(self.hot_streams&self.active_streams)+cold_stidx, -num_of_intervals:]) == 0):
+                elif rowidx < len(self.hot_utilities) and pinch == 'above' and ( # Hot utility and cold stream, but cold stream not present above pinch
+                np.sum(self._interval_heats[~self.hot_streams&self.active_streams][cold_stidx, -num_of_intervals:]) == 0):
                     matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
-                elif pinch == 'below' and ( # Stream isn't present below pinch
-                np.sum(self._interval_heats[self.active_streams][hot_stidx, :num_of_intervals]) == 0 or
-                np.sum(self._interval_heats[self.active_streams][np.sum(self.hot_streams&self.active_streams)+cold_stidx, :num_of_intervals]) == 0):
+                elif colidx < len(self.cold_utilities) and pinch == 'below' and ( # Cold utility and hot stream, but hot stream not present below pinch
+                np.sum(self._interval_heats[self.hot_streams&self.active_streams][hot_stidx, :num_of_intervals]) == 0):
+                    matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
+                elif rowidx >= len(self.hot_utilities) and pinch == 'above' and ( # Match between streams, but at least one isn't present above pinch
+                np.sum(self._interval_heats[self.hot_streams&self.active_streams][hot_stidx, -num_of_intervals:]) == 0 or
+                np.sum(self._interval_heats[~self.hot_streams&self.active_streams][cold_stidx, -num_of_intervals:]) == 0):
+                    matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
+                elif colidx >= len(self.cold_utilities) and pinch == 'below' and ( # Match between streams, but at least one isn't present above pinch
+                np.sum(self._interval_heats[self.hot_streams&self.active_streams][hot_stidx, :num_of_intervals]) == 0 or
+                np.sum(self._interval_heats[~self.hot_streams&self.active_streams][cold_stidx, :num_of_intervals]) == 0):
                     matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
                 elif forbidden[rowidx, colidx]:
                     matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
@@ -593,6 +607,8 @@ class HEN:
                     matches[rowidx, colidx] = m.Const(1, f'Y_{rowidx}{colidx}')
                 else:
                     matches[rowidx, colidx] = m.Var(0, lb = 0, ub = 1, integer = True, name = f'Y_{rowidx}{colidx}')
+                    m.Equation(lower[rowidx, colidx]*matches[rowidx, colidx] <= Q_exc_tot[rowidx, colidx])
+                    m.Equation(upper[rowidx, colidx]*matches[rowidx, colidx] >= Q_exc_tot[rowidx, colidx])
                 if colidx >= len(self.cold_utilities): # Increase cold stream counter iff colidx represents a stream and not a utility
                     cold_stidx += 1
             if rowidx >= len(self.hot_utilities): # Increase hot stream counter iff colidx represents a stream and not a utility
@@ -602,10 +618,10 @@ class HEN:
         # Eqn 1
         for stidx, rowidx in enumerate(range(len(self.hot_utilities), Q_exchanger.shape[0])): # stidx bc self.hot_streams has only streams, but no utilities
             for intervalidx in range(Q_exchanger.shape[2]):
-                if pinch == 'above' and np.sum(self._interval_heats[self.active_streams][stidx, -num_of_intervals:]) != 0: # Create an equation iff stream is present
+                if pinch == 'above' and np.sum(self._interval_heats[self.hot_streams&self.active_streams][stidx, -num_of_intervals:]) != 0: # Create an equation iff stream is present
                     m.Equation(residuals[rowidx, intervalidx] - residuals[rowidx, intervalidx+1] +
                         m.sum(Q_exchanger[rowidx, :, intervalidx]) == self._interval_heats[self.hot_streams&self.active_streams][stidx, -num_of_intervals+intervalidx])
-                elif pinch == 'below' and np.sum(self._interval_heats[self.active_streams][stidx, :num_of_intervals]) != 0:
+                elif pinch == 'below' and np.sum(self._interval_heats[self.hot_streams&self.active_streams][stidx, :num_of_intervals]) != 0:
                     m.Equation(residuals[rowidx, intervalidx] - residuals[rowidx, intervalidx+1] +
                         m.sum(Q_exchanger[rowidx, :, intervalidx]) == self._interval_heats[self.hot_streams&self.active_streams][stidx, intervalidx])
 
@@ -617,20 +633,16 @@ class HEN:
         # Eqn 3
         for stidx, colidx in enumerate(range(len(self.cold_utilities), Q_exchanger.shape[1])):
             for intervalidx in range(Q_exchanger.shape[2]):
-                if pinch == 'above' and np.sum(self._interval_heats[self.active_streams][np.sum(self.hot_streams&self.active_streams)+stidx, -num_of_intervals:]) != 0: # Create an equation iff stream is present
+                if pinch == 'above' and np.sum(self._interval_heats[~self.hot_streams&self.active_streams][stidx, -num_of_intervals:]) != 0: # Create an equation iff stream is present
                     m.Equation(m.sum(Q_exchanger[:, colidx, intervalidx]) == self._interval_heats[~self.hot_streams&self.active_streams][stidx, -num_of_intervals+intervalidx])
-                elif pinch == 'below' and np.sum(self._interval_heats[self.active_streams][np.sum(self.hot_streams&self.active_streams)+stidx, :num_of_intervals]) != 0:
+                elif pinch == 'below' and np.sum(self._interval_heats[~self.hot_streams&self.active_streams][stidx, :num_of_intervals]) != 0:
                     m.Equation(m.sum(Q_exchanger[:, colidx, intervalidx]) == self._interval_heats[~self.hot_streams&self.active_streams][stidx, intervalidx])
         
         # Eqn 4
         if pinch == 'below' and self.last_utility > 0:
             for colidx in range(len(self.cold_utilities)):
                 m.Equation(m.sum(Q_exchanger[len(self.hot_utilities):, colidx, :]) == self.last_utility.value)
-
-        for rowidx in range(Q_exc_tot.shape[0]):
-            for colidx in range(Q_exc_tot.shape[1]):
-                m.Equation(lower[rowidx, colidx]*matches[rowidx, colidx] <= Q_exc_tot[rowidx, colidx])
-                m.Equation(upper[rowidx, colidx]*matches[rowidx, colidx] >= Q_exc_tot[rowidx, colidx])
+              
         m.Minimize(m.sum(matches))
         m.options.IMODE = 3 # Steady-state optimization
         m.options.solver = 1 # APOPT solver
@@ -655,16 +667,13 @@ class HEN:
         results = m.load_results()
         Y_results = np.zeros_like(matches, dtype = np.int8)
         Q_tot_results = np.zeros_like(Q_exc_tot, dtype = np.float)
-        rowidx, colidx = 0, 0
-        for elem in results: # Adding to both matrices in one loop
-            if elem.startswith('q_tot'): # Adding Q_tot first since it comes first
-                Q_tot_results[rowidx, colidx] = results[elem][0]
-                colidx += 1
-                if colidx == Q_tot_results.shape[1]:
-                    colidx = 0
-                    rowidx += 1
-        Q_tot_results[Q_tot_results < 5e-8] = 0 # Rounding to prevent extremely small heats from being counted. Cutoff may need extra tuning
-        Y_results[Q_tot_results > 0] = 1
+        for rowidx in range(Q_exc_tot.shape[0]):
+            for colidx in range(Q_exc_tot.shape[1]):
+                # Elements with nonzero values are stored as intermediates within Q_exc_tot
+                # 5e-8 is rounding to prevent extremely small heats from being counted. Cutoff may need extra tuning
+                if not isinstance(Q_exc_tot[rowidx, colidx], (int, float)) and Q_exc_tot[rowidx, colidx][0] > 5e-8:
+                    Q_tot_results[rowidx, colidx] = Q_exc_tot[rowidx, colidx][0]
+                    Y_results[rowidx, colidx] = 1
         
         # Generating names to be used in a Pandas DataFrame with the results
         row_names = self.hot_utilities.index.append(self.streams.index[self.hot_streams&self.active_streams])
