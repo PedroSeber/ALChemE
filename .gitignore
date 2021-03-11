@@ -1,0 +1,8 @@
+# Jupyter notebook
+.ipynb_checkpoints
+.ipynb
+
+# PyInstaller folders
+build
+dist
+
