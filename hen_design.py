@@ -455,7 +455,7 @@ class HEN:
         ax.Position = [ti(1), ti(2), 1 - ti(1) - ti(3), 1 - ti(2) - ti(4)]; % Removing whitespace from the graph
         """
 
-    def place_exchangers(self, pinch, upper = None, lower = None, forbidden = None, required = None):
+    def place_exchangers(self, pinch, upper = None, lower = None, forbidden = None, required = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), exchanger_type = 'Fixed Head', called_by_GMS = False):
         """
         Notes to self (WIP):
         Equations come from C.A. Floudas, "Nonlinear and Mixed-Integer Optimization", p. 283
@@ -489,6 +489,12 @@ class HEN:
         elif required.shape != forbidden.shape:
             raise ValueError('Required must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
 
+        # Auto-forbidden matches (for the get_more_solutions() function)
+        if pinch == 'above' and not called_by_GMS:
+            self.always_forbidden_above = np.zeros_like(forbidden)
+        elif pinch == 'below' and not called_by_GMS:
+            self.always_forbidden_below = np.zeros_like(forbidden)
+        
         # Setting the upper heat exchanged limit for each pair of streams
         if upper is None: # Automatically set the upper limits
             upper = np.zeros_like(forbidden, dtype = np.float64)
@@ -500,10 +506,6 @@ class HEN:
             upper[upper > temp_upper] = temp_upper # Setting the given upper limit only for streams that naturally had a higher limit
         elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
             raise ValueError('Upper must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
-        else: # An array-like was passed
-            for rowidx in range(upper.shape[0]):
-                for colidx in range(upper.shape[1]):
-                    upper[rowidx, colidx] = m.Const(upper[rowidx, colidx], f'Qlim_upper_{rowidx}{colidx}')
         # Setting the lower heat exchanged limit for each pair of streams
         if lower is None:
             lower = np.zeros_like(forbidden, dtype = np.float64)
@@ -513,10 +515,13 @@ class HEN:
             lower = np.ones_like(forbidden, dtype = np.float64) * lower
         elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
             raise ValueError('Lower must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
-        else: # An array-like was passed
-            for rowidx in range(lower.shape[0]):
-                for colidx in range(lower.shape[1]):
-                    lower[rowidx, colidx] = m.Const(lower[rowidx, colidx], f'Qlim_lower_{rowidx}{colidx}')
+        
+        # Updating the HEN_object variables (used in get_more_sols() )
+        if not called_by_GMS:
+            self.upper_limit = upper
+            self.lower_limit = lower
+            self.forbidden = forbidden
+            self.required = required
 
         # First N rows of residuals are the N hot utilities
         # The extra interval represents the heats coming in from "above the highest interval" (always 0)
@@ -595,34 +600,64 @@ class HEN:
                 # No hot utilities are used below pinch
                 if rowidx < len(self.hot_utilities) and (pinch == 'below' or self.first_utility == 0):
                     matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
+                    if pinch == 'above' and not called_by_GMS:
+                        self.always_forbidden_above[rowidx, colidx] = True
+                    elif pinch == 'below' and not called_by_GMS:
+                        self.always_forbidden_below[rowidx, colidx] = True
                 # No cold utilities are used above pinch
                 elif colidx < len(self.cold_utilities) and pinch == 'above':
                     matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
+                    if pinch == 'above' and not called_by_GMS:
+                        self.always_forbidden_above[rowidx, colidx] = True
+                    elif pinch == 'below' and not called_by_GMS:
+                        self.always_forbidden_below[rowidx, colidx] = True
                 # No matches between utilities
                 elif rowidx < len(self.hot_utilities) and colidx < len(self.cold_utilities):
                     matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
+                    if pinch == 'above' and not called_by_GMS:
+                        self.always_forbidden_above[rowidx, colidx] = True
+                    elif pinch == 'below' and not called_by_GMS:
+                        self.always_forbidden_below[rowidx, colidx] = True
                 # Hot utility and cold stream, but cold stream not present above pinch
                 elif rowidx < len(self.hot_utilities) and pinch == 'above' and (
                 np.sum(self._interval_heats[~self.hot_streams&self.active_streams][cold_stidx, -num_of_intervals:]) == 0):
                     matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
+                    if pinch == 'above' and not called_by_GMS:
+                        self.always_forbidden_above[rowidx, colidx] = True
+                    elif pinch == 'below' and not called_by_GMS:
+                        self.always_forbidden_below[rowidx, colidx] = True
                 # Cold utility and hot stream, but hot stream not present below pinch
                 elif colidx < len(self.cold_utilities) and pinch == 'below' and (
                 np.sum(self._interval_heats[self.hot_streams&self.active_streams][hot_stidx, :num_of_intervals]) == 0):
                     matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
+                    if pinch == 'above' and not called_by_GMS:
+                        self.always_forbidden_above[rowidx, colidx] = True
+                    elif pinch == 'below' and not called_by_GMS:
+                        self.always_forbidden_below[rowidx, colidx] = True
                 # Match between streams, but at least one isn't present above pinch
                 elif rowidx >= len(self.hot_utilities) and pinch == 'above' and (
                 np.sum(self._interval_heats[self.hot_streams&self.active_streams][hot_stidx, -num_of_intervals:]) == 0 or
                 np.sum(self._interval_heats[~self.hot_streams&self.active_streams][cold_stidx, -num_of_intervals:]) == 0):
                     matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
-                # Match between streams, but at least one isn't present above pinch
+                    if pinch == 'above' and not called_by_GMS:
+                        self.always_forbidden_above[rowidx, colidx] = True
+                    elif pinch == 'below' and not called_by_GMS:
+                        self.always_forbidden_below[rowidx, colidx] = True
+                # Match between streams, but at least one isn't present below pinch
                 elif colidx >= len(self.cold_utilities) and pinch == 'below' and (
                 np.sum(self._interval_heats[self.hot_streams&self.active_streams][hot_stidx, :num_of_intervals]) == 0 or
                 np.sum(self._interval_heats[~self.hot_streams&self.active_streams][cold_stidx, :num_of_intervals]) == 0):
                     matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
+                    if pinch == 'above' and not called_by_GMS:
+                        self.always_forbidden_above[rowidx, colidx] = True
+                    elif pinch == 'below' and not called_by_GMS:
+                        self.always_forbidden_below[rowidx, colidx] = True
                 elif forbidden[rowidx, colidx]:
                     matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
                 elif required[rowidx, colidx]:
                     matches[rowidx, colidx] = m.Const(1, f'Y_{rowidx}{colidx}')
+                    m.Equation(lower[rowidx, colidx] <= Q_exc_tot[rowidx, colidx])
+                    m.Equation(upper[rowidx, colidx] >= Q_exc_tot[rowidx, colidx])
                 else:
                     matches[rowidx, colidx] = m.Var(0, lb = 0, ub = 1, integer = True, name = f'Y_{rowidx}{colidx}')
                     m.Equation(lower[rowidx, colidx]*matches[rowidx, colidx] <= Q_exc_tot[rowidx, colidx])
@@ -666,9 +701,9 @@ class HEN:
         m.options.solver = 1 # APOPT solver
         m.options.csv_write = 2
         m.options.web = 0
-        m.solver_options = ['minlp_maximum_iterations 1000', \
+        m.solver_options = ['minlp_maximum_iterations 750', \
                             # minlp iterations with integer solution
-                            'minlp_max_iter_with_int_sol 1000', \
+                            'minlp_max_iter_with_int_sol 750', \
                             # treat minlp as nlp
                             'minlp_as_nlp 0', \
                             # nlp sub-problem max iterations
@@ -676,29 +711,185 @@ class HEN:
                             # 1 = depth first, 2 = breadth first
                             'minlp_branch_method 1', \
                             # maximum deviation from whole number
-                            'minlp_integer_tol 0.001', \
+                            'minlp_integer_tol 0.0001', \
                             # covergence tolerance
-                            'minlp_gap_tol 0.01']
-        m.solve()
+                            'minlp_gap_tol 0.001']
+        # Hiding the convergence info when this function is called by get_more_solutions()
+        if called_by_GMS:
+            disp = False
+        else:
+            disp = True
+        m.solve(disp = disp)
 
         # Saving the results to variables (for ease of access)
         results = m.load_results()
         Y_results = np.zeros_like(matches, dtype = np.int8)
         Q_tot_results = np.zeros_like(Q_exc_tot, dtype = np.float)
-        for rowidx in range(Q_exc_tot.shape[0]):
-            for colidx in range(Q_exc_tot.shape[1]):
-                # Elements with nonzero values are stored as intermediates within Q_exc_tot
-                # 5e-7 is rounding to prevent extremely small heats from being counted. Cutoff may need extra tuning
-                if not isinstance(Q_exc_tot[rowidx, colidx], (int, float)) and Q_exc_tot[rowidx, colidx][0] > 5e-7:
-                    Q_tot_results[rowidx, colidx] = Q_exc_tot[rowidx, colidx][0]
-                    Y_results[rowidx, colidx] = 1
-        
+        costs = np.zeros_like(Q_tot_results)
         # Generating names to be used in a Pandas DataFrame with the results
         row_names = self.hot_utilities.index.append(self.streams.index[self.hot_streams&self.active_streams])
         col_names = self.cold_utilities.index.append(self.streams.index[~self.hot_streams&self.active_streams])
         Y_results = pd.DataFrame(Y_results, row_names, col_names)
         Q_tot_results = pd.DataFrame(Q_tot_results, row_names, col_names)
-        return Y_results, Q_tot_results
+        costs = pd.DataFrame(costs, row_names, col_names)
+        U = U * U_unit
+        # Populating the DataFrames with the results
+        for rowidx in range(Q_exc_tot.shape[0]):
+            for colidx in range(Q_exc_tot.shape[1]):
+                # No matches between utilities --> Y, heats, and costs are always 0
+                if rowidx < len(self.hot_utilities) and colidx < len(self.cold_utilities):
+                    continue
+                # Elements with nonzero values are stored as intermediates within Q_exc_tot
+                # 1e-6 is rounding to prevent extremely small heats from being counted. Cutoff may need extra tuning
+                elif not isinstance(Q_exc_tot[rowidx, colidx], (int, float)) and Q_exc_tot[rowidx, colidx][0] > 1e-6:
+                    Q_tot_results.iat[rowidx, colidx] = Q_exc_tot[rowidx, colidx][0]
+                    Y_results.iat[rowidx, colidx] = 1
+
+                    # Hot utility and cold stream
+                    if rowidx < len(self.hot_utilities):
+                        delta_T1 = self.hot_utilities[row_names[rowidx]].temperature - self.streams[col_names[colidx]].t2
+                        delta_T2 = self.hot_utilities[row_names[rowidx]].temperature - self.streams[col_names[colidx]].t1
+                    # Hot stream and cold utility
+                    elif colidx < len(self.cold_utilities):
+                        delta_T1 = self.streams[row_names[rowidx]].t1 - self.cold_utilities[col_names[colidx]].temperature
+                        delta_T2 = self.streams[row_names[rowidx]].t2 - self.cold_utilities[col_names[colidx]].temperature
+                    # Hot stream and cold stream
+                    else:
+                        # Cold stream ends at a point higher than the hot stream begins, thus only part of the hot stream can be used
+                        if self.streams[col_names[colidx]].t2 >= self.streams[row_names[rowidx]].t1 - self.delta_t:
+                            delta_T1 = self.delta_t
+                        else:
+                            delta_T1 = self.streams[row_names[rowidx]].t1 - self.streams[col_names[colidx]].t2
+                        # Cold stream begins at a point higher than the hot stream ends, thus only part of the hot stream can be used
+                        if self.streams[col_names[colidx]].t1 >= self.streams[row_names[rowidx]].t2 - self.delta_t:
+                            delta_T2 = self.delta_t
+                        else:
+                            delta_T2 = self.streams[row_names[rowidx]].t2 - self.streams[col_names[colidx]].t1
+
+                    if delta_T1 == delta_T2:
+                        delta_T_lm = delta_T1.value * self.delta_temp_unit
+                    else:
+                        delta_T_lm = (delta_T1.value - delta_T2.value) / (np.log(delta_T1.value/delta_T2.value)) * self.delta_temp_unit
+                    area = Q_exc_tot[rowidx, colidx][0] * self.heat_unit / (U * delta_T_lm)
+                    Ac = area.to('ft**2').value
+
+                    # All costs for Ac < 150 came from linear regressions for the appropriate cost eqn with 200 <= Ac <= 1000
+                    if exchanger_type == 'Floating Head':
+                        if Ac > 150:
+                            costs.iat[rowidx, colidx] = np.exp(12.0310) * Ac**(-0.8709) * np.exp(0.09005*np.log(Ac)**2)
+                        else:
+                            costs.iat[rowidx, colidx] = 11.76656116273358*Ac + 18378.519876797985
+                    elif exchanger_type == 'Fixed Head':
+                        if Ac > 150:
+                            costs.iat[rowidx, colidx] = np.exp(11.4185) * Ac**(-0.9228) * np.exp(0.09861*np.log(Ac)**2)
+                        else:
+                            costs.iat[rowidx, colidx] = 7.875782676947923*Ac + 9308.899770148431
+                    elif exchanger_type == 'U-Tube':
+                        if Ac > 150:
+                            costs.iat[rowidx, colidx] = np.exp(11.5510) * Ac**(-0.9186) * np.exp(0.09790*np.log(Ac)**2)
+                        else:
+                            costs.iat[rowidx, colidx] = 8.838982418325454*Ac + 10684.794389373843
+                    elif exchanger_type == 'Kettle Vaporizer':
+                        if Ac > 150:
+                            costs.iat[rowidx, colidx] = np.exp(12.3310) * Ac**(-0.8709) * np.exp(0.09005*np.log(Ac)**2)
+                        else:
+                            costs.iat[rowidx, colidx] = 15.883196220397641*Ac + 24808.40692590638
+                    
+        costs = np.round(costs, 2) # Money needs only 2 decimals
+        # Storing the results in the HEN object
+        if pinch == 'above':
+            if 'Q_tot_above' not in dir(self):
+                self.Q_tot_above = np.array((None, Q_tot_results)) # Having a None before or after the DF just makes things work
+                self.exchanger_costs_above = np.array((None, costs))
+        else:
+            if 'Q_tot_below' not in dir(self):
+                self.Q_tot_below = np.array((None, Q_tot_results)) # Having a None before or after the DF just makes things work
+                self.exchanger_costs_below = np.array((None, costs))
+
+        return Y_results, Q_tot_results, costs
+    
+    def get_more_sols(self, pinch, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), exchanger_type = 'Fixed Head'):
+        # Setup
+        forbidden = self.forbidden
+        required = self.required
+        iter_count = 1
+
+        if pinch.casefold() in {'above', 'top', 'up'}:
+            total_count = self.Q_tot_above[1].shape[0]*self.Q_tot_above[1].shape[1] - np.sum(self.always_forbidden_above)
+            for rowidx in range(self.Q_tot_above[1].shape[0]):
+                for colidx in range(self.Q_tot_above[1].shape[1]):
+                    # Match will never occur, so don't bother calling place_exchangers()
+                    if self.always_forbidden_above[rowidx, colidx] or self.required[rowidx, colidx] or self.forbidden[rowidx, colidx]:
+                        continue
+                    # Original solution had a match here, so we'll try forbidding it
+                    elif self.Q_tot_above[1].iat[rowidx, colidx] > 0:
+                        self.forbidden[rowidx, colidx] = True
+                    # Original solution didn't have a match here, so we'll try requiring it
+                    elif self.Q_tot_above[1].iat[rowidx, colidx] == 0:
+                        self.required[rowidx, colidx] = True
+                    
+                    print(f'Iteration {iter_count} out of {total_count}')
+                    try:
+                        unique_sol = True
+                        _, Q_tot, costs = self.place_exchangers(pinch, self.upper_limit, self.lower_limit, self.forbidden, self.required, U, U_unit, exchanger_type, called_by_GMS = True)
+                        for prev_sol in self.Q_tot_above[1::2]:
+                            if np.allclose(prev_sol, Q_tot, 0, 1e-6): # Using a 1e-6 absolute tolerance to compare heats
+                                unique_sol = False
+                                continue
+                        if unique_sol:
+                            self.Q_tot_above = np.append(self.Q_tot_above, np.array((None, Q_tot)), axis = 0)
+                            self.exchanger_costs_above = np.append(self.exchanger_costs_above, np.array((None, costs)), axis = 0)
+                            print(f'Found a unique solution during iteration {iter_count}')
+                    except Exception:
+                        pass
+                    finally:
+                        # Restoring the forbidden / required matches to their original values
+                        if self.Q_tot_above[1].iat[rowidx, colidx] > 0:
+                            self.forbidden[rowidx, colidx] = False
+                        elif self.Q_tot_above[1].iat[rowidx, colidx] == 0:
+                            self.required[rowidx, colidx] = False
+                        iter_count += 1
+            # Removing None from the list of solutions
+            self.Q_tot_above = self.Q_tot_above[1::2]
+            self.exchanger_costs_above = self.exchanger_costs_above[1::2]
+        elif pinch.casefold() in {'below', 'bottom', 'bot', 'down'}:
+            total_count = self.Q_tot_below[1].shape[0]*self.Q_tot_below[1].shape[1] - np.sum(self.always_forbidden_below)
+            for rowidx in range(self.Q_tot_below[1].shape[0]):
+                for colidx in range(self.Q_tot_below[1].shape[1]):
+                    # Match will never occur or will always occur, so don't bother calling place_exchangers()
+                    if self.always_forbidden_below[rowidx, colidx] or self.required[rowidx, colidx] or self.forbidden[rowidx, colidx]:
+                        continue
+                    # Original solution had a match here, so we'll try forbidding it
+                    elif self.Q_tot_below[1].iat[rowidx, colidx] > 0:
+                        self.forbidden[rowidx, colidx] = True
+                    # Original solution didn't have a match here, so we'll try requiring it
+                    elif self.Q_tot_below[1].iat[rowidx, colidx] == 0:
+                        self.required[rowidx, colidx] = True
+                    
+                    print(f'Iteration {iter_count} out of {total_count}')
+                    try:
+                        unique_sol = True
+                        _, Q_tot, costs = self.place_exchangers(pinch, self.upper_limit, self.lower_limit, self.forbidden, self.required, U, U_unit, exchanger_type, called_by_GMS = True)
+                        for prev_sol in self.Q_tot_below[1::2]:
+                            if prev_sol.equals(Q_tot):
+                                unique_sol = False
+                                continue
+                        if unique_sol:
+                            self.Q_tot_below = np.append(self.Q_tot_below, np.array((None, Q_tot)), axis = 0)
+                            self.exchanger_costs_below = np.append(self.exchanger_costs_below, np.array((None, costs)), axis = 0)
+                            print(f'Found a unique solution during iteration {iter_count}')
+                    except Exception:
+                        pass
+                    finally:
+                        # Restoring the forbidden / required matches to their original values
+                        if self.Q_tot_below[1].iat[rowidx, colidx] > 0:
+                            self.forbidden[rowidx, colidx] = False
+                        elif self.Q_tot_below[1].iat[rowidx, colidx] == 0:
+                            self.required[rowidx, colidx] = False
+                        iter_count += 1
+            # Removing None from the list of solutions
+            self.Q_tot_below = self.Q_tot_below[1::2]
+            self.exchanger_costs_below = self.exchanger_costs_below[1::2]
 
 
     def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, exchanger_delta_t = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), 
