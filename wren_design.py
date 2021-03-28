@@ -4,6 +4,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.markers import MarkerStyle
 import unyt
 from tkinter import ttk
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
@@ -12,180 +13,98 @@ import os
 import pickle
 import warnings
 from gekko import GEKKO
-from time import time
 
-class HEN:
+class WReN:
     """
-    A class that holds streams and exchangers, used to solve HEN problems
+    A class that holds processes, used to solve WReN problems
     """
-    def __init__(self, delta_t = 10, flow_unit = unyt.kg/unyt.s, temp_unit = unyt.degC, cp_unit = unyt.J/(unyt.delta_degC*unyt.kg)):
-        self.delta_t = delta_t * temp_unit
+    def __init__(self, conc_unit = unyt.mg/unyt.kg, flow_unit = unyt.kg/unyt.s):
+        self.conc_unit = conc_unit
         self.flow_unit = flow_unit
-        self.temp_unit = temp_unit
-        self.cp_unit = cp_unit
-        self.streams = pd.Series()
-        self.hot_utilities = pd.Series()
-        self.cold_utilities = pd.Series()
-        self.exchangers = pd.Series()
-        self.active_streams = np.array([], dtype = np.bool)
-
-        # Making unyt work since it doesn't like multiplying with °C and °F
-        if self.temp_unit == unyt.degC:
-            self.delta_temp_unit = unyt.delta_degC
-        elif self.temp_unit == unyt.degF:
-            self.delta_temp_unit = unyt.delta_degF
-        else:
-            self.delta_temp_unit = temp_unit
-
-        self.heat_unit = self.flow_unit * self.cp_unit * self.delta_temp_unit
+        self.processes = pd.Series()
+        self.active_processes = np.array([], dtype = np.bool)
     
-    def add_stream(self, t1, t2, cp = None, flow_rate = 1, heat = None, stream_name = None, temp_unit = None, cp_unit = None, flow_unit = None, heat_unit = None, GUI_oe_tree = None):
-        if cp is None and heat is None:
-            raise ValueError('One of cp or heat must be passed')
-        elif cp is not None and heat is not None:
-            warnings.warn('You have passed both a cp and a heat. The heat input will be ignored')
-
+    def add_process(self, sink_conc, source_conc, sink_flow, source_flow = None, process_name = None, conc_unit = None, flow_unit = None, HENOS_oe_tree = None):
         # Converting to default units (as declared via the HEN class)        
-        if temp_unit is None:
-            t1 *= self.temp_unit
-            t2 *= self.temp_unit
+        if conc_unit is None:
+            sink_conc *= self.conc_unit
+            source_conc *= self.conc_unit
         else:
-            t1 *= temp_unit
-            t1 = t1.to(self.temp_unit)
-            t2 *= temp_unit
-            t2 = t2.to(self.temp_unit)
+            sink_conc *= conc_unit
+            sink_conc = sink_conc.to(self.conc_unit)
+            source_conc *= conc_unit
+            source_conc = source_conc.to(self.conc_unit)
         
+        if source_flow is None:
+            source_flow = sink_flow
+
         if flow_unit is None:
-            flow_rate *= self.flow_unit
+            sink_flow *= self.flow_unit
+            source_flow *= self.flow_unit
         else:
-            flow_rate *= flow_unit
-            flow_rate = flow_rate.to(self.flow_unit)
+            sink_flow *= flow_unit
+            sink_flow = sink_flow.to(self.flow_unit)
+            source_flow *= flow_unit
+            source_flow = source_flow.to(self.flow_unit)
         
-        if cp: # cp was passed; ignoring any value passed in the heat parameter
-            if cp_unit is None:
-                cp *= self.cp_unit
-            else:
-                cp *= cp_unit
-                cp = cp.to(self.cp_unit)
-        else: # Heat was passed
-            if heat_unit is None:
-                heat *= self.heat_unit
-            else:
-                heat *= heat_unit
-                heat = heat.to(self.heat_unit)
-            cp = heat / (np.abs(t2.value - t1.value) * self.delta_temp_unit * self.flow_unit)
-        
-        if stream_name is None:
-            if t1 > t2: # Hot stream
-                letter = 'H'
-            else: # Cold stream
-                letter = 'C'
+        if process_name is None:
             idx = 1
-            while f'{letter}{idx}' in self.streams.keys():
+            while f'P{idx}' in self.processes.keys():
                 idx += 1
-            stream_name = f'{letter}{idx}'
+            process_name = f'{letter}{idx}'
 
-        # Generating the stream object and adding it to the HEN object
-        temp = pd.Series(Stream(t1, t2, cp, flow_rate), [stream_name])
-        self.streams = pd.concat([self.streams, temp])
-        self.active_streams = np.append(self.active_streams, True)
+        # Generating the process object and adding it to the WReN object
+        temp = pd.Series(Process(sink_conc, source_couc, sink_flow, source_flow), [process_name])
+        self.processes = pd.concat([self.processes, temp])
+        self.active_processes = np.append(self.active_processes, True)
 
-        if GUI_oe_tree is not None:
+        if HENOS_oe_tree is not None:
             temp_diff = t2 - t1
             temp_diff = temp_diff.tolist() * self.delta_temp_unit
             oeDataVector = [stream_name, t1, t2, cp*flow_rate, cp*flow_rate*temp_diff]
             print(oeDataVector)
-            GUI_oe_tree.receive_new_stream(oeDataVector)
+            HENOS_oe_tree.receive_new_stream(oeDataVector)
 
-    def activate_stream(self, streams_to_change):
-        if isinstance(streams_to_change, str): # Only one stream name was passed
-            if not self.streams[streams_to_change].active:
-                self.streams[streams_to_change].active = True
-                loc = self.streams.index.get_loc(streams_to_change)
-                self.active_streams[loc] = True
+    def activate_process(self, processes_to_change):
+        if isinstance(processes_to_change, str): # Only one process name was passed
+            if not self.processes[processes_to_change].active:
+                self.processes[processes_to_change].active = True
+                loc = self.processes.index.get_loc(processes_to_change)
+                self.active_processes[loc] = True
             else:
-                raise ValueError(f'Stream {streams_to_change} is already inactive')
-        elif isinstance(streams_to_change, (list, tuple, set)): # A container of stream names was passed
-            for elem in streams_to_change:
-                if not self.streams[elem].active:
-                    self.streams[elem].active = True
-                    loc = self.streams.index.get_loc(elem)
-                    self.active_streams[loc] = True
+                raise ValueError(f'Process {processes_to_change} is already inactive')
+        elif isinstance(processes_to_change, (list, tuple, set)): # A container of process names was passed
+            for elem in processes_to_change:
+                if not self.processes[elem].active:
+                    self.processes[elem].active = True
+                    loc = self.processes.index.get_loc(elem)
+                    self.active_processes[loc] = True
                 else:
-                    warnings.warn(f'Stream {elem} is already inactive. Ignoring this input and continuing')
+                    warnings.warn(f'Process {elem} is already inactive. Ignoring this input and continuing')
         else:
-            raise TypeError('The streams_to_change parameter should be a string or list/tuple/set of strings')
+            raise TypeError('The processes_to_change parameter should be a string or list/tuple/set of strings')
     
-    def deactivate_stream(self, streams_to_change):
-        if isinstance(streams_to_change, str): # Only one stream name was passed
-            if self.streams[streams_to_change].active:
-                self.streams[streams_to_change].active = False
-                loc = self.streams.index.get_loc(streams_to_change)
-                self.active_streams[loc] = False
+    def deactivate_process(self, processes_to_change):
+        if isinstance(processes_to_change, str): # Only one process name was passed
+            if self.processes[processes_to_change].active:
+                self.processes[processes_to_change].active = False
+                loc = self.processes.index.get_loc(processes_to_change)
+                self.active_process[loc] = False
             else:
-                raise ValueError(f'Stream {streams_to_change} is already active')
-        elif isinstance(streams_to_change, (list, tuple, set)): # A container of stream names was passed
-            for elem in streams_to_change:
-                if self.streams[elem].active:
-                    self.streams[elem].active = False
-                    loc = self.streams.index.get_loc(elem)
-                    self.active_streams[loc] = False
+                raise ValueError(f'Process {processes_to_change} is already active')
+        elif isinstance(processes_to_change, (list, tuple, set)): # A container of process names was passed
+            for elem in processes_to_change:
+                if self.processes[elem].active:
+                    self.processes[elem].active = False
+                    loc = self.processes.index.get_loc(elem)
+                    self.active_processes[loc] = False
                 else:
-                    warnings.warn(f'Stream {elem} is already active. Ignoring this input and continuing')
+                    warnings.warn(f'Process {elem} is already active. Ignoring this input and continuing')
         else:
-            raise TypeError('The streams_to_change parameter should be a string or list/tuple/set of strings')
-    
-    def add_utility(self, utility_type, temperature, cost = 0, utility_name = None, temp_unit = None, cost_unit = None, GUI_oe_tree = None):
-        if utility_type.casefold() in {'hot', 'hot utility', 'h', 'hu'}:
-            utility_type = 'hot'
-        elif utility_type.casefold() in {'cold', 'cold utility', 'c', 'cu'}:
-            utility_type = 'cold'
-        else:
-            raise ValueError('The utility_type parameter should be either "hot" or "cold"')
-
-        # Converting to default units (as declared via the HEN class)        
-        if temp_unit is None:
-            temperature *= self.temp_unit
-        else:
-            temperature *= temp_unit
-            temperature = temperature.to(self.temp_unit)
-        
-        if cost_unit is None: # None that cost unit is in currency / energy (or currency / power), so that's why we divide it by self.heat unit
-            cost /= self.heat_unit
-        else:
-            cost *= cost_unit
-            cost = cost.to(1/self.heat_unit)
-        
-        if utility_name is None:
-            idx = 1
-            if utility_type == 'hot': # Hot utility
-                letter = 'HU'
-                while f'{letter}{idx}' in self.hot_utilities.keys():
-                    idx += 1
-            else: # Cold utility
-                letter = 'CU'
-                while f'{letter}{idx}' in self.cold_utilities.keys():
-                    idx += 1
-            utility_name = f'{letter}{idx}'
-            
-        
-        # Generating the utility object and adding it to the HEN object
-        temp = pd.Series(Utility(utility_type, temperature, cost), [utility_name])
-        if utility_type == 'hot': # Hot utility
-            self.hot_utilities = pd.concat([self.hot_utilities, temp])
-        else: # Cold utility
-            self.cold_utilities = pd.concat([self.cold_utilities, temp])
-            
-        if GUI_oe_tree is not None:
-            oeDataVector = [utility_name, utility_type, temperature, cost, '', 'Active']
-            GUI_oe_tree.receive_new_utility(oeDataVector)            
+            raise TypeError('The processes_to_change parameter should be a string or list/tuple/set of strings')          
     
     def delete(self, obj_to_del):
-        if obj_to_del in self.hot_utilities: # More will be added once exchangers to utilities get implemented
-            del self.hot_utilities[obj_to_del]
-        elif obj_to_del in self.cold_utilities:
-            del self.cold_utilities[obj_to_del]
-        elif obj_to_del in self.streams:
+        if obj_to_del in self.processes:
             for exchanger in self.streams[obj_to_del].connected_exchangers[::-1]: # All exchangers connected to a deleted stream should be removed
                 self.delete(exchanger)
             loc = self.streams.index.get_loc(obj_to_del)
@@ -453,15 +372,73 @@ class HEN:
         ax.Position = [ti(1), ti(2), 1 - ti(1) - ti(3), 1 - ti(2) - ti(4)]; % Removing whitespace from the graph
         """
 
-    def _place_exchangers(self, pinch, num_of_intervals, upper, lower, forbidden, required, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), exchanger_type = 'Fixed Head', called_by_GMS = False):
+    def place_exchangers(self, pinch, upper = None, lower = None, forbidden = None, required = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), exchanger_type = 'Fixed Head', called_by_GMS = False):
         """
         Notes to self (WIP):
         Equations come from C.A. Floudas, "Nonlinear and Mixed-Integer Optimization", p. 283
         self._interval_heats has each stream as its rows and each interval as its columns, such that the topmost interval is the rightmost column
         """
 
+        # Restricting the number of intervals based on the pinch point
+        if pinch.casefold() in {'above', 'top', 'up'}:
+            if self.first_utility_loc == 0:
+                raise ValueError('This HEN doesn\'t have anything above the pinch')
+            else:
+                num_of_intervals = self.first_utility_loc + 1
+            pinch = 'above'
+        elif pinch.casefold() in {'below', 'bottom', 'bot', 'down'}:
+            if self.first_utility_loc == 0: # No pinch point --> take all intervals
+                num_of_intervals = self._interval_heats[self.active_streams].shape[-1]
+            else:
+                num_of_intervals = self._interval_heats[self.active_streams, :-self.first_utility_loc-1].shape[-1]
+            pinch = 'below'
+
         # Starting GEKKO
         m = GEKKO(remote = False)
+
+        # Forbidden and required matches
+        if forbidden is None:
+            forbidden = np.zeros((np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities)), dtype = np.bool)
+        elif forbidden.shape != (np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities)):
+            raise ValueError('Forbidden must be a %dx%d matrix' % (np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities)))
+        if required is None:
+            required = np.zeros_like(forbidden)
+        elif required.shape != forbidden.shape:
+            raise ValueError('Required must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
+
+        # Auto-forbidden matches (for the get_more_solutions() function)
+        if pinch == 'above' and not called_by_GMS:
+            self.always_forbidden_above = np.zeros_like(forbidden)
+        elif pinch == 'below' and not called_by_GMS:
+            self.always_forbidden_below = np.zeros_like(forbidden)
+        
+        # Setting the upper heat exchanged limit for each pair of streams
+        if upper is None: # Automatically set the upper limits
+            upper = np.zeros_like(forbidden, dtype = np.float64)
+            upper = self._get_maximum_heats(upper, pinch, num_of_intervals)
+        elif isinstance(upper, (int, float)): # A single value was passed, representing a maximum threshold
+            temp_upper = upper
+            upper = np.zeros_like(forbidden, dtype = np.float64)
+            upper = self._get_maximum_heats(upper, pinch, num_of_intervals)
+            upper[upper > temp_upper] = temp_upper # Setting the given upper limit only for streams that naturally had a higher limit
+        elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
+            raise ValueError('Upper must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
+        # Setting the lower heat exchanged limit for each pair of streams
+        if lower is None:
+            lower = np.zeros_like(forbidden, dtype = np.float64)
+        elif isinstance(lower, (int, float)): # A single value was passed, representing a minimum threshold
+            if np.sum(lower > upper):
+                raise ValueError(f'The lower threshold you passed is greater than the maximum heat of {np.sum(lower > upper)} streams')
+            lower = np.ones_like(forbidden, dtype = np.float64) * lower
+        elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
+            raise ValueError('Lower must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
+        
+        # Updating the HEN_object variables (used in get_more_sols() )
+        if not called_by_GMS:
+            self.upper_limit = upper
+            self.lower_limit = lower
+            self.forbidden = forbidden
+            self.required = required
 
         # First N rows of residuals are the N hot utilities
         # The extra interval represents the heats coming in from "above the highest interval" (always 0)
@@ -654,15 +631,22 @@ class HEN:
                             'minlp_integer_tol 0.0001', \
                             # covergence tolerance
                             'minlp_gap_tol 0.001']
-        m.solve(disp = False)
+        # Hiding the convergence info when this function is called by get_more_solutions()
+        if called_by_GMS:
+            disp = False
+        else:
+            disp = True
+        m.solve(disp = disp)
 
         # Saving the results to variables (for ease of access)
         results = m.load_results()
+        Y_results = np.zeros_like(matches, dtype = np.int8)
         Q_tot_results = np.zeros_like(Q_exc_tot, dtype = np.float)
         costs = np.zeros_like(Q_tot_results)
         # Generating names to be used in a Pandas DataFrame with the results
         row_names = self.hot_utilities.index.append(self.streams.index[self.hot_streams&self.active_streams])
         col_names = self.cold_utilities.index.append(self.streams.index[~self.hot_streams&self.active_streams])
+        Y_results = pd.DataFrame(Y_results, row_names, col_names)
         Q_tot_results = pd.DataFrame(Q_tot_results, row_names, col_names)
         costs = pd.DataFrame(costs, row_names, col_names)
         U = U * U_unit
@@ -676,8 +660,8 @@ class HEN:
                 # 1e-6 is rounding to prevent extremely small heats from being counted. Cutoff may need extra tuning
                 elif not isinstance(Q_exc_tot[rowidx, colidx], (int, float)) and Q_exc_tot[rowidx, colidx][0] > 1e-6:
                     Q_tot_results.iat[rowidx, colidx] = Q_exc_tot[rowidx, colidx][0]
+                    Y_results.iat[rowidx, colidx] = 1
 
-                    # Obtaining ΔT values for ΔT_lm
                     # Hot utility and cold stream
                     if rowidx < len(self.hot_utilities):
                         delta_T1 = self.hot_utilities[row_names[rowidx]].temperature - self.streams[col_names[colidx]].t2
@@ -729,153 +713,104 @@ class HEN:
                             costs.iat[rowidx, colidx] = 15.883196220397641*Ac + 24808.40692590638
                     
         costs = np.round(costs, 2) # Money needs only 2 decimals
-        results = pd.concat((Q_tot_results, costs), keys = ['Q', 'cost'])
-        return results
-    
-    def solve_HEN(self, pinch, depth = 0, upper = None, lower = None, forbidden = None, required = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), exchanger_type = 'Fixed Head'):
-        """
-        The main function used by ALChemE to automatically place exchangers
-        """
-        # Forbidden and required matches
-        if forbidden is None:
-            forbidden = np.zeros((np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities)), dtype = np.bool)
-        elif forbidden.shape != (np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities)):
-            raise ValueError('Forbidden must be a %dx%d matrix' % (np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities)))
-        if required is None:
-            required = np.zeros_like(forbidden)
-        elif required.shape != forbidden.shape:
-            raise ValueError('Required must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
-        
-        # Restricting the number of intervals based on the pinch point
-        if pinch.casefold() in {'above', 'top', 'up'}:
-            if self.first_utility_loc == 0:
-                raise ValueError('This HEN doesn\'t have anything above the pinch')
-            else:
-                num_of_intervals = self.first_utility_loc + 1
-            self.always_forbidden_above = np.zeros_like(forbidden) # Used in the get_more_sols area of this function
-            pinch = 'above'
-        elif pinch.casefold() in {'below', 'bottom', 'bot', 'down'}:
-            if self.first_utility_loc == 0: # No pinch point --> take all intervals
-                num_of_intervals = self._interval_heats[self.active_streams].shape[-1]
-            else:
-                num_of_intervals = self._interval_heats[self.active_streams, :-self.first_utility_loc-1].shape[-1]
-            self.always_forbidden_below = np.zeros_like(forbidden) # Used in the get_more_sols area of this function
-            pinch = 'below'
-        
-        # Setting the upper heat exchanged limit for each pair of streams
-        if upper is None: # Automatically set the upper limits
-            upper = np.zeros_like(forbidden, dtype = np.float64)
-            upper = self._get_maximum_heats(upper, pinch, num_of_intervals)
-        elif isinstance(upper, (int, float)): # A single value was passed, representing a maximum threshold
-            temp_upper = upper
-            upper = np.zeros_like(forbidden, dtype = np.float64)
-            upper = self._get_maximum_heats(upper, pinch, num_of_intervals)
-            upper[upper > temp_upper] = temp_upper # Setting the given upper limit only for streams that naturally had a higher limit
-        elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
-            raise ValueError('Upper must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
-        # Setting the lower heat exchanged limit for each pair of streams
-        if lower is None:
-            lower = np.zeros_like(forbidden, dtype = np.float64)
-        elif isinstance(lower, (int, float)): # A single value was passed, representing a minimum threshold
-            if np.sum(lower > upper):
-                raise ValueError(f'The lower threshold you passed is greater than the maximum heat of {np.sum(lower > upper)} streams')
-            lower = np.ones_like(forbidden, dtype = np.float64) * lower
-        elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
-            raise ValueError('Lower must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
-        
-        # Updating the HEN_object variables (used in the get_more_sols area of this function )
-        self.upper_limit = upper
-        self.lower_limit = lower
-        self.forbidden = forbidden
-        self.required = required
-
-        t1 = time()
-        results = self._place_exchangers(pinch, num_of_intervals, upper, lower, forbidden, required, U, U_unit, exchanger_type)
-        t2 = time()
-        print(f'The first solution took {t2-t1:.2f} seconds')
         # Storing the results in the HEN object
         if pinch == 'above':
-            self.results_above = [results]
-        elif pinch == 'below':
-            self.results_below = [results]
-        
-        if depth == 0: # No further iterations to get more solutions
-            return results
-        
-        ###### get_more_solutions area ######
+            if 'Q_tot_above' not in dir(self):
+                self.Q_tot_above = np.array((None, Q_tot_results)) # Having a None before or after the DF just makes things work
+                self.exchanger_costs_above = np.array((None, costs))
+        else:
+            if 'Q_tot_below' not in dir(self):
+                self.Q_tot_below = np.array((None, Q_tot_results)) # Having a None before or after the DF just makes things work
+                self.exchanger_costs_below = np.array((None, costs))
+
+        return Y_results, Q_tot_results, costs
+    
+    def get_more_sols(self, pinch, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), exchanger_type = 'Fixed Head'):
+        # Setup
+        forbidden = self.forbidden
+        required = self.required
         iter_count = 1
 
-        if pinch == 'above':
-            total_count = self.results_above[0].loc['Q'].shape[0]*self.results_above[0].loc['Q'].shape[1] - np.sum(self.always_forbidden_above)
-            for rowidx in range(self.results_above[0].loc['Q'].shape[0]):
-                for colidx in range(self.results_above[0].loc['Q'].shape[1]):
+        if pinch.casefold() in {'above', 'top', 'up'}:
+            total_count = self.Q_tot_above[1].shape[0]*self.Q_tot_above[1].shape[1] - np.sum(self.always_forbidden_above)
+            for rowidx in range(self.Q_tot_above[1].shape[0]):
+                for colidx in range(self.Q_tot_above[1].shape[1]):
                     # Match will never occur, so don't bother calling place_exchangers()
                     if self.always_forbidden_above[rowidx, colidx] or self.required[rowidx, colidx] or self.forbidden[rowidx, colidx]:
                         continue
                     # Original solution had a match here, so we'll try forbidding it
-                    elif self.results_above[0].loc['Q'].iat[rowidx, colidx] > 0:
+                    elif self.Q_tot_above[1].iat[rowidx, colidx] > 0:
                         self.forbidden[rowidx, colidx] = True
                     # Original solution didn't have a match here, so we'll try requiring it
-                    elif self.results_above[0].loc['Q'].iat[rowidx, colidx] == 0:
+                    elif self.Q_tot_above[1].iat[rowidx, colidx] == 0:
                         self.required[rowidx, colidx] = True
                     
                     print(f'Iteration {iter_count} out of {total_count}')
                     try:
                         unique_sol = True
-                        results = self._place_exchangers(pinch, num_of_intervals, self.upper_limit, self.lower_limit, self.forbidden, self.required, U, U_unit, exchanger_type, called_by_GMS = True)
-                        for prev_sol in self.results_above:
-                            if np.allclose(prev_sol.loc['Q'], results.loc['Q'], 0, 1e-6): # Using a 1e-6 absolute tolerance to compare heats
+                        _, Q_tot, costs = self.place_exchangers(pinch, self.upper_limit, self.lower_limit, self.forbidden, self.required, U, U_unit, exchanger_type, called_by_GMS = True)
+                        for prev_sol in self.Q_tot_above[1::2]:
+                            if np.allclose(prev_sol, Q_tot, 0, 1e-6): # Using a 1e-6 absolute tolerance to compare heats
                                 unique_sol = False
                                 continue
                         if unique_sol:
-                            self.results_above.append(results)
-                            print(f'Found a unique solution during iteration {iter_count}. Solution has a cost of ${results.loc["cost"].sum().sum():,.2f}')
+                            self.Q_tot_above = np.append(self.Q_tot_above, np.array((None, Q_tot)), axis = 0)
+                            self.exchanger_costs_above = np.append(self.exchanger_costs_above, np.array((None, costs)), axis = 0)
+                            print(f'Found a unique solution during iteration {iter_count}')
                     except Exception:
                         pass
                     finally:
                         # Restoring the forbidden / required matches to their original values
-                        if self.results_above[0].loc['Q'].iat[rowidx, colidx] > 0:
+                        if self.Q_tot_above[1].iat[rowidx, colidx] > 0:
                             self.forbidden[rowidx, colidx] = False
-                        elif self.results_above[0].loc['Q'].iat[rowidx, colidx] == 0:
+                        elif self.Q_tot_above[1].iat[rowidx, colidx] == 0:
                             self.required[rowidx, colidx] = False
                         iter_count += 1
-        elif pinch == 'below':
-            total_count = self.results_below[0].loc['Q'].shape[0]*self.results_below[0].loc['Q'].shape[1] - np.sum(self.always_forbidden_below)
-            for rowidx in range(self.results_below[0].loc['Q'].shape[0]):
-                for colidx in range(self.results_below[0].loc['Q'].shape[1]):
+            # Removing None from the list of solutions
+            self.Q_tot_above = self.Q_tot_above[1::2]
+            self.exchanger_costs_above = self.exchanger_costs_above[1::2]
+        elif pinch.casefold() in {'below', 'bottom', 'bot', 'down'}:
+            total_count = self.Q_tot_below[1].shape[0]*self.Q_tot_below[1].shape[1] - np.sum(self.always_forbidden_below)
+            for rowidx in range(self.Q_tot_below[1].shape[0]):
+                for colidx in range(self.Q_tot_below[1].shape[1]):
                     # Match will never occur or will always occur, so don't bother calling place_exchangers()
                     if self.always_forbidden_below[rowidx, colidx] or self.required[rowidx, colidx] or self.forbidden[rowidx, colidx]:
                         continue
                     # Original solution had a match here, so we'll try forbidding it
-                    elif self.results_below[0].loc['Q'].iat[rowidx, colidx] > 0:
+                    elif self.Q_tot_below[1].iat[rowidx, colidx] > 0:
                         self.forbidden[rowidx, colidx] = True
                     # Original solution didn't have a match here, so we'll try requiring it
-                    elif self.results_below[0].loc['Q'].iat[rowidx, colidx] == 0:
+                    elif self.Q_tot_below[1].iat[rowidx, colidx] == 0:
                         self.required[rowidx, colidx] = True
                     
                     print(f'Iteration {iter_count} out of {total_count}')
                     try:
                         unique_sol = True
-                        results = self._place_exchangers(pinch, num_of_intervals, self.upper_limit, self.lower_limit, self.forbidden, self.required, U, U_unit, exchanger_type, called_by_GMS = True)
-                        for prev_sol in self.results_below:
-                            if np.allclose(prev_sol.loc['Q'], results.loc['Q'], 0, 1e-6): # Using a 1e-6 absolute tolerance to compare heats
+                        _, Q_tot, costs = self.place_exchangers(pinch, self.upper_limit, self.lower_limit, self.forbidden, self.required, U, U_unit, exchanger_type, called_by_GMS = True)
+                        for prev_sol in self.Q_tot_below[1::2]:
+                            if prev_sol.equals(Q_tot):
                                 unique_sol = False
                                 continue
                         if unique_sol:
-                            self.results_below.append(results)
-                            print(f'Found a unique solution during iteration {iter_count}. Solution has a cost of ${results.loc["cost"].sum().sum():,.2f}')
+                            self.Q_tot_below = np.append(self.Q_tot_below, np.array((None, Q_tot)), axis = 0)
+                            self.exchanger_costs_below = np.append(self.exchanger_costs_below, np.array((None, costs)), axis = 0)
+                            print(f'Found a unique solution during iteration {iter_count}')
                     except Exception:
                         pass
                     finally:
                         # Restoring the forbidden / required matches to their original values
-                        if self.results_below[0].loc['Q'].iat[rowidx, colidx] > 0:
+                        if self.Q_tot_below[1].iat[rowidx, colidx] > 0:
                             self.forbidden[rowidx, colidx] = False
-                        elif self.results_below[0].loc['Q'].iat[rowidx, colidx] == 0:
+                        elif self.Q_tot_below[1].iat[rowidx, colidx] == 0:
                             self.required[rowidx, colidx] = False
                         iter_count += 1
+            # Removing None from the list of solutions
+            self.Q_tot_below = self.Q_tot_below[1::2]
+            self.exchanger_costs_below = self.exchanger_costs_below[1::2]
+
 
     def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, exchanger_delta_t = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), 
-        exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0, pressure_unit = unyt.Pa, GUI_oe_tree = None):
+        exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0, pressure_unit = unyt.Pa, HENOS_oe_tree = None):
 
         # General data validation
         if exchanger_type.casefold() in {'fixed head', 'fixed', 'fixed-head'}:
@@ -1017,10 +952,10 @@ class HEN:
         self.streams[stream2].connected_exchangers.append(exchanger_name)
         
         # 
-        if GUI_oe_tree is not None:
+        if HENOS_oe_tree is not None:
             oeDataVector = [exchanger_name, stream1, stream2, heat, self.exchangers[exchanger_name].cost_fob, 'Active']
             print(oeDataVector)
-            GUI_oe_tree.receive_new_exchanger(oeDataVector)
+            HENOS_oe_tree.receive_new_exchanger(oeDataVector)
         
     def save(self, name, overwrite = False):
         if "." in name:
@@ -1087,48 +1022,17 @@ class HEN:
                         upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[self.active_streams][temp_idx1, lowest_cold:num_of_intervals]), np.sum(self._interval_heats[self.active_streams][temp_idx2, :num_of_intervals]) ))
         return upper
 
-class Stream():
-    def __init__(self, t1, t2, cp, flow_rate):
-        self.t1 = t1
-        self.t2 = t2
-        self.cp = cp
-        self.flow_rate = flow_rate
-        self.q_above = None # Will be updated once pinch point is found
-        self.q_below = None
+class Process():
+    def __init__(self, sink_conc, source_conc, sink_flow, source_flow):
+        self.sink_conc = sink_conc
+        self.source_conc = source_conc
+        self.sink_flow = sink_flow
+        self.source_flow = source_flow
         self.active = True
-        self.connected_exchangers = [] # When stream is deleted, exchangers should also be deleted
-
-        if self.t1 > self.t2: # Hot stream
-            self.current_t_above = self.t1
-            self.current_t_below = None # Will be updated once pinch point is found
-            self.stream_type = 'Hot'
-        else: # Cold stream
-            self.current_t_above = None
-            self.current_t_below = self.t1
-            self.stream_type = 'Cold'
     
     def __repr__(self):
-        if self.t1 > self.t2:
-            stream_type = 'Hot'
-        else:
-            stream_type = 'Cold'
-        text =(f'{stream_type} stream with T_in = {self.t1} and T_out = {self.t2}\n'
-             f'c_p = {self.cp} and flow rate = {self.flow_rate}\n')
-        if self.q_above is not None:
-            text += f'Above pinch: {self.q_above} total, {self.q_above_remaining:.6g} remaining, T = {self.current_t_above:.4g}\n'
-            text += f'Below pinch: {self.q_below} total, {self.q_below_remaining:.6g} remaining, T = {self.current_t_below:.4g}\n'
-        return text
-
-class Utility():
-    def __init__(self, utility_type, temperature, cost):
-        self.utility_type = utility_type
-        self.temperature = temperature
-        self.cost = cost
-        # More things can be added if the get_parameters() function is updated to allow multiple utilities
-    
-    def __repr__(self):
-        text = (f'A {self.utility_type} utility at a temperature of {self.temperature}\n'
-            f'Has a cost of {self.cost}')
+        text =(f'A process with sink concentration = {self.sink_conc} and source concentration = {self.source_conc}\n'
+             f'sink flow = {self.sink_flow} and source flow = {self.source_flow}\n')
         return text
 
 class HeatExchanger():
