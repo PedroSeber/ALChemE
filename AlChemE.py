@@ -25,38 +25,38 @@ class ALChemE_app(tk.Frame):
         sheight = master.winfo_screenheight()
         #top = master.winfo_toplevel()
         self.master.geometry(str(swidth)+'x'+str(sheight))
-        
+
         # Set logo
         logo = Image.open(str(pathlib.Path(__file__).parent.absolute()) + '\\ALChemE_logo.png')
         pixels_x, pixels_y = tuple([int(0.75 * x)  for x in logo.size])
         logoRender = ImageTk.PhotoImage(logo.resize((pixels_x, pixels_y)))        
         logoPanel = tk.Label(self.master, image=logoRender)
         logoPanel.image = logoRender
-        
+
         # Define child programs
-        HENOS = HENOS_frame(self.master)
-        WRENOS = WRENOS_frame(self.master)
+        ALChemE_HEN = HEN_GUI_frame(self.master)
+        AlChemE_WReN = WReN_GUI_frame(self.master)
         # Arrange elements
         logoPanel.grid(row=0, column=1)
-        HENOS.grid(row=1, column=0)
-        WRENOS.grid(row=1, column=1, sticky='nw')
+        ALChemE_HEN.grid(row=1, column=0)
+        AlChemE_WReN.grid(row=1, column=1, sticky='nw')
         
-class HENOS_frame(ttk.Frame):
+class HEN_GUI_frame(ttk.Frame):
     '''
-    A class which holds the HENOS frame. Slave of ALChemE
+    A class which holds the HEN_GUI frame. Slave of ALChemE
     '''
     def __init__(self, master):
         ttk.Frame.__init__(self, master, padding='0.1i', relief='solid')
         
         # Define elements
-        HENOSLabel = ttk.Label(self, text='HEN Optimization', font=('Helvetica', 14, 'bold', 'underline'))
-        HENOSDescrip = tk.Text(self, bg='#F0F0F0', height=2, width=50, highlightthickness=0, borderwidth=0, font=('Helvetica'))
+        HEN_GUILabel = ttk.Label(self, text='HEN Optimization', font=('Helvetica', 14, 'bold', 'underline'))
+        HEN_GUIDescrip = tk.Text(self, bg='#F0F0F0', height=2, width=50, highlightthickness=0, borderwidth=0, font=('Helvetica'))
         descrip = """A program for visualizing and solving heat exchanger network \nproblems using linear optimization."""
-        newHENOS = ttk.Button(self, text='New Project', command=self.run_HENOS)
-        HENOSDescrip.tag_configure('center', justify='center')
-        HENOSDescrip.insert('1.0', descrip)
-        HENOSDescrip.tag_add('center','1.0','end')
-        HENOSDescrip.config(state='disabled')
+        newHEN_GUI = ttk.Button(self, text='New Project', command=self.run_HEN_GUI)
+        HEN_GUIDescrip.tag_configure('center', justify='center')
+        HEN_GUIDescrip.insert('1.0', descrip)
+        HEN_GUIDescrip.tag_add('center','1.0','end')
+        HEN_GUIDescrip.config(state='disabled')
         
         # Set display picture
         self.henPic = Image.open(str(pathlib.Path(__file__).parent.absolute()) + '\\hen_logo.png')
@@ -66,42 +66,42 @@ class HENOS_frame(ttk.Frame):
         self.henPanel.image = self.henPanel
         
         # Arrange elements
-        HENOSLabel.grid(row=0, column=0)
+        HEN_GUILabel.grid(row=0, column=0)
         self.henPanel.grid(row=1, column=0)
-        HENOSDescrip.grid(row=2, column=0)
-        newHENOS.grid(row=3, column=0)
+        HEN_GUIDescrip.grid(row=2, column=0)
+        newHEN_GUI.grid(row=3, column=0)
         
-    def run_HENOS(self):
-        HENOS_window = tk.Toplevel(self.master)
-        HENOS_window.title('HEN Optimization Software')
-        hen_frontend.HENOS_app(HENOS_window)
+    def run_HEN_GUI(self):
+        HEN_GUI_window = tk.Toplevel(self.master)
+        HEN_GUI_window.title('ALChemE - HEN Optimization')
+        hen_frontend.HEN_GUI_app(HEN_GUI_window)
 
-class WRENOS_frame(ttk.Frame):
+class WReN_GUI_frame(ttk.Frame):
     '''
-    A class which holds the WRENOS frmae. Slave of ALChemE
+    A class which holds the WReN_GUI frmae. Slave of ALChemE
     '''
     def __init__(self, master):
         ttk.Frame.__init__(self, master, padding='0.1i', relief='solid')
         
         # Define elements
-        WRENOSLabel = ttk.Label(self, text='WReN Optimization', font=('Helvetica', 14, 'bold', 'underline'))
-        WRENOSDescrip = tk.Text(self, bg='#F0F0F0', height=2, width=50, highlightthickness=0, borderwidth=0, font=('Helvetica'))
+        WReN_GUILabel = ttk.Label(self, text='WReN Optimization', font=('Helvetica', 14, 'bold', 'underline'))
+        WReN_GUIDescrip = tk.Text(self, bg='#F0F0F0', height=2, width=50, highlightthickness=0, borderwidth=0, font=('Helvetica'))
         descrip = """A program for visualizing and solving water recovery network \nproblems using optimization."""
-        newWRENOS = ttk.Button(self, text='New Project')
-        WRENOSDescrip.tag_configure('center', justify='center')
-        WRENOSDescrip.insert('1.0', descrip)
-        WRENOSDescrip.tag_add('center','1.0','end')
-        WRENOSDescrip.config(state='disabled')
+        newWReN_GUI = ttk.Button(self, text='New Project')
+        WReN_GUIDescrip.tag_configure('center', justify='center')
+        WReN_GUIDescrip.insert('1.0', descrip)
+        WReN_GUIDescrip.tag_add('center','1.0','end')
+        WReN_GUIDescrip.config(state='disabled')
         
         # Arrange elements
-        WRENOSLabel.grid(row=0, column=0)
-        WRENOSDescrip.grid(row=1, column=0)
-        newWRENOS.grid(row=2, column=0)
+        WReN_GUILabel.grid(row=0, column=0)
+        WReN_GUIDescrip.grid(row=1, column=0)
+        newWReN_GUI.grid(row=2, column=0)
         
-    #def run_WRENOS(self):
-        #HENOS_window = tk.Toplevel(self.master)
-        #HENOS_window.title('HEN Optimization Software')
-        #frontend.HENOS_app(HENOS_window)
+    #def run_WReN_GUI(self):
+        #WReN_GUI_window = tk.Toplevel(self.master)
+        #WReN_GUI_window.title('ALChemE - WReN Optimization')
+        #frontend.WReN_GUI_app(HEN_GUI_window)
 ##############################################################################
 # RUN APPLICATION
 ##############################################################################

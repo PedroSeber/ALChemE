@@ -12,9 +12,9 @@ from hen_design import generate_GUI_plot
 import subprocess
 
 # CLASSES
-class HENOS_app():
+class HEN_GUI_app():
     '''
-    A class which holds the HENOS application. Slave of root window.
+    A class which holds the HEN_GUI application. Slave of root window.
     '''
     def __init__(self, master):
         
@@ -29,8 +29,8 @@ class HENOS_app():
         top = master.winfo_toplevel()
         
         # Initialize dropdown menu
-        self.HENOS_dropdown_menu = tk.Menu(top)
-        top['menu'] = self.HENOS_dropdown_menu
+        self.HEN_GUI_dropdown_menu = tk.Menu(top)
+        top['menu'] = self.HEN_GUI_dropdown_menu
         
         # Initialize tab systemos
         self.tabControl = ttk.Notebook(self.master, width=swidth, height=sheight)
@@ -38,39 +38,39 @@ class HENOS_app():
         
         # Intialize control panel
         control_panel_Tab = ttk.Frame(self.tabControl)
-        self.tabControl.add(control_panel_Tab, text='HENOS Control Panel')
+        self.tabControl.add(control_panel_Tab, text='HEN_GUI Control Panel')
         self.tabControl.pack(expand=1, fill='both')
         
         # Initialize HEN object
         self.HEN_object = HEN()
         
         # Initialize control panel elements
-        self.HENOS_object_explorer = HENOS_object_explorer(control_panel_Tab, self.HEN_object)
-        self.HENOS_si_frame = HENOS_stream_input(control_panel_Tab, self.HEN_object, self.HENOS_object_explorer)
-        self.HENOS_ga_frame = HENOS_graphical_analysis_controls(control_panel_Tab, self.tabControl, self.HENOS_object_explorer, self.HEN_object)
-        self.HENOS_uc_frame = HENOS_user_constraints(control_panel_Tab)
-        self.HENOS_os_frame = HENOS_optimization_controls(control_panel_Tab, self.HEN_object, self.HENOS_object_explorer, self.HENOS_uc_frame)
+        self.HEN_GUI_object_explorer = HEN_GUI_object_explorer(control_panel_Tab, self.HEN_object)
+        self.HEN_GUI_si_frame = HEN_GUI_stream_input(control_panel_Tab, self.HEN_object, self.HEN_GUI_object_explorer)
+        self.HEN_GUI_ga_frame = HEN_GUI_graphical_analysis_controls(control_panel_Tab, self.tabControl, self.HEN_GUI_object_explorer, self.HEN_object)
+        self.HEN_GUI_uc_frame = HEN_GUI_user_constraints(control_panel_Tab)
+        self.HEN_GUI_os_frame = HEN_GUI_optimization_controls(control_panel_Tab, self.HEN_object, self.HEN_GUI_object_explorer, self.HEN_GUI_uc_frame)
 
         # Intialize dropdown menu options
-        self.fileMenu = tk.Menu(self.HENOS_dropdown_menu, tearoff=0)
+        self.fileMenu = tk.Menu(self.HEN_GUI_dropdown_menu, tearoff=0)
         self.fileMenu.add_command(label='New')
         self.fileMenu.add_command(label='Open', command=self.loadfile)
         self.fileMenu.add_command(label='Save', command=self.savefile)
         self.fileMenu.add_command(label='Save As', command=self.savefile)
-        self.HENOS_dropdown_menu.add_cascade(label='File', menu=self.fileMenu)
-        self.HENOS_dropdown_menu.add_cascade(label='Settings')
+        self.HEN_GUI_dropdown_menu.add_cascade(label='File', menu=self.fileMenu)
+        self.HEN_GUI_dropdown_menu.add_cascade(label='Settings')
         
         # Placing control panel elements
         control_panel_Tab.rowconfigure(4, weight=1)
         control_panel_Tab.columnconfigure(9, weight=1)
         
-        self.HENOS_si_frame.grid(row=0, rowspan=2, column=0, sticky='nsew')
+        self.HEN_GUI_si_frame.grid(row=0, rowspan=2, column=0, sticky='nsew')
         
-        self.HENOS_ga_frame.grid(row=0, column=9, sticky='nsew')
-        self.HENOS_os_frame.grid(row=1, rowspan=2, column=9,  sticky='new')
+        self.HEN_GUI_ga_frame.grid(row=0, column=9, sticky='nsew')
+        self.HEN_GUI_os_frame.grid(row=1, rowspan=2, column=9,  sticky='new')
         
-        self.HENOS_object_explorer.grid(row=2, column=0, rowspan=40, columnspan=8, sticky='nsew')
-        self.HENOS_uc_frame.grid(row=3, column=9, rowspan=3, sticky='nsew')
+        self.HEN_GUI_object_explorer.grid(row=2, column=0, rowspan=40, columnspan=8, sticky='nsew')
+        self.HEN_GUI_uc_frame.grid(row=3, column=9, rowspan=3, sticky='nsew')
     
     def savefile(self):
         self.HEN_object.save('alcheme_HEN')
@@ -78,9 +78,9 @@ class HENOS_app():
     def loadfile(self):
         self.HEN_object.load()
 
-class HENOS_stream_input(ttk.Frame):
+class HEN_GUI_stream_input(ttk.Frame):
     '''
-    A class which holds the HENOS stream input. Slave of HENOS_app.    
+    A class which holds the HEN_GUI stream input. Slave of HEN_GUI_app.    
     '''
     def __init__(self, master, HEN_object, HEN_object_explorer):        
         # Initialize frame properties
@@ -296,7 +296,7 @@ class HENOS_stream_input(ttk.Frame):
             raw_input[9] = unyt.BTU/unyt.s
         
         # Add input to HEN object and data display
-        self.HEN_object.add_stream(t1 = raw_input[1], t2 = raw_input[2], cp = raw_input[4], flow_rate = raw_input[6], heat = raw_input[8], stream_name = raw_input[0], HENOS_oe_tree = self.HEN_object_explorer.objectExplorer, temp_unit = self.temp_unit, cp_unit = raw_input[5], flow_unit = raw_input[7], heat_unit = raw_input[9])    
+        self.HEN_object.add_stream(t1 = raw_input[1], t2 = raw_input[2], cp = raw_input[4], flow_rate = raw_input[6], heat = raw_input[8], stream_name = raw_input[0], GUI_oe_tree = self.HEN_object_explorer.objectExplorer, temp_unit = self.temp_unit, cp_unit = raw_input[5], flow_unit = raw_input[7], heat_unit = raw_input[9])    
 
     def add_exchanger(self):
         # Define variables
@@ -408,16 +408,16 @@ class HENOS_stream_input(ttk.Frame):
             if rawdata == '': rawdata = None
             raw_input.append(rawdata)        
         
-        self.HEN_object.add_utility(utility_type = raw_input[1], temperature = float(raw_input[2]), cost = float(raw_input[4]), utility_name = raw_input[0], temp_unit = unyt.degC, HENOS_oe_tree = self.HEN_object_explorer.objectExplorer)#, cost_unit = raw_input[5])
+        self.HEN_object.add_utility(utility_type = raw_input[1], temperature = float(raw_input[2]), cost = float(raw_input[4]), utility_name = raw_input[0], temp_unit = unyt.degC, GUI_oe_tree = self.HEN_object_explorer.objectExplorer)#, cost_unit = raw_input[5])
         
         if errorFlag == False:
             for row in [0, 2, 4]:
                 self.input_entries[str([11, row])].delete(0, 'end')
         
-class HENOS_object_explorer(ttk.Frame):
+class HEN_GUI_object_explorer(ttk.Frame):
     '''
-    A class which holds the HENOS object explorer and visualizer. Slave of
-    HENOS_app.
+    A class which holds the HEN_GUI object explorer and visualizer. Slave of
+    HEN_GUI_app.
     '''
     def __init__(self, master, HEN_object):
         # Initialize frame properties
@@ -436,10 +436,10 @@ class HENOS_object_explorer(ttk.Frame):
         tLabel.grid(row=41, column=0, sticky='w')
         
         # Initialize object explorer        
-        self.objectExplorer = HENOS_objE_tree(self, self.HEN_object)
+        self.objectExplorer = HEN_GUI_objE_tree(self, self.HEN_object)
         
         # Initialize object visualizer
-        self.objectVisualizer = HENOS_objE_display(self, self.HEN_object)
+        self.objectVisualizer = HEN_GUI_objE_display(self, self.HEN_object)
         
         # Initialize object explorer control buttons
         self.delete_stream = ttk.Button(self, text='Delete Stream', command=self.objectExplorer.delete_item)
@@ -460,10 +460,10 @@ class HENOS_object_explorer(ttk.Frame):
         self.objectExplorer.grid(row=1, column=0, rowspan=40, columnspan=8, padx=5, pady=(5,15), sticky='nsew')
         self.objectVisualizer.grid(row=42, column=0, rowspan=1, columnspan=8, padx=5, pady=(5,5), sticky='nsew')
 
-class HENOS_objE_tree(ttk.Treeview):
+class HEN_GUI_objE_tree(ttk.Treeview):
     '''
     A class which holds the Treeview object which forms the basis of the
-    object explorer. Slave of HENOS_object_explorer
+    object explorer. Slave of HEN_GUI_object_explorer
     '''
     def __init__(self, master, HEN_object):
         # Initialize treeview properties
@@ -554,7 +554,7 @@ class HENOS_objE_tree(ttk.Treeview):
             
             self.master.objectVisualizer.printobj2screen(HEN_sO_name, objID, tag2)
 
-class HENOS_objE_display(tk.Text):
+class HEN_GUI_objE_display(tk.Text):
     def __init__(self, master, HEN_object):
         # Initialize text properties
         tk.Text.__init__(self, master, highlightthickness=0)
@@ -604,7 +604,7 @@ class HENOS_objE_display(tk.Text):
         self.insert('end', '-'*65 + '***INITIALIZED***' + '-'*65 + '\n\n')
         self.insert('end', '>>> ')    
 
-class HENOS_graphical_analysis_controls(ttk.Frame):
+class HEN_GUI_graphical_analysis_controls(ttk.Frame):
     def __init__(self, master, tabControl, object_explorer, HEN_object):
         # Initialize frame properties
         ttk.Frame.__init__(self, master, padding='0.1i', relief='solid')
@@ -642,7 +642,7 @@ class HENOS_graphical_analysis_controls(ttk.Frame):
         self.HEN_object.get_parameters()
         self.HEN_object.make_tid(self.showT.get(), self.showP.get(), self.tabControl)
 
-class HENOS_optimization_controls(ttk.Frame):
+class HEN_GUI_optimization_controls(ttk.Frame):
     def __init__(self, master, HEN_object, HEN_object_explorer, HEN_uC_explorer):
         # Intialize fram properties
         ttk.Frame.__init__(self, master, padding='0.1i', relief='solid')
@@ -882,7 +882,7 @@ class HENOS_optimization_controls(ttk.Frame):
         if self.depthCount.get() > 0:
             self.depthCount.set(self.depthCount.get() - 1)
     
-class HENOS_user_constraints(ttk.Frame):
+class HEN_GUI_user_constraints(ttk.Frame):
     def __init__(self, master):
         # Initialize frame properties
         ttk.Frame.__init__(self, master, padding='0.1i', relief='solid')
@@ -892,7 +892,7 @@ class HENOS_user_constraints(ttk.Frame):
         ucLabel.grid(row=0, column=0, sticky='nw')
         
         
-        self.ucExplorer = HENOS_uC_tree(self)
+        self.ucExplorer = HEN_GUI_uC_tree(self)
         
         self.dcButton = ttk.Button(self, text='Delete Constraint', command=self.ucExplorer.delete_constraint)
         self.adcButton = ttk.Button(self, text='Activate/Deactivate Constraint')
@@ -907,10 +907,10 @@ class HENOS_user_constraints(ttk.Frame):
         
         self.ucExplorer.grid(row=1, rowspan=40, column=0, columnspan=20, padx=5, pady=(5,5), sticky='nsew')
     
-class HENOS_uC_tree(ttk.Treeview):
+class HEN_GUI_uC_tree(ttk.Treeview):
     '''
     A class which holds the Treeview object which forms the basis of the
-    object explorer. Slave of HENOS_object_explorer
+    object explorer. Slave of HEN_GUI_object_explorer
     '''
     def __init__(self, master):
         # Initialize treeview properties
@@ -970,13 +970,3 @@ def create_dropdown_menu(master, options):
     var = tk.StringVar(master)
     menu = ttk.OptionMenu(master, var, options[0], *options)
     return [menu, var]
-
-##############################################################################
-# RUN APPLICATION
-##############################################################################
-root = tk.Tk()
-
-if __name__ == '__main__':
-    HENOS = HENOS_app(root)
-    HENOS.master.title('HENOS')
-    root.mainloop()
