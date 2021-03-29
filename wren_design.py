@@ -4,7 +4,6 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.markers import MarkerStyle
 import unyt
 from tkinter import ttk
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
@@ -24,8 +23,8 @@ class WReN:
         self.processes = pd.Series()
         self.active_processes = np.array([], dtype = np.bool)
     
-    def add_process(self, sink_conc, source_conc, sink_flow, source_flow = None, process_name = None, conc_unit = None, flow_unit = None, HENOS_oe_tree = None):
-        # Converting to default units (as declared via the HEN class)        
+    def add_process(self, sink_conc, source_conc, sink_flow, source_flow = None, process_name = None, conc_unit = None, flow_unit = None, GUI_oe_tree = None):
+        # Converting to default units (as declared via the WReN class)        
         if conc_unit is None:
             sink_conc *= self.conc_unit
             source_conc *= self.conc_unit
@@ -58,12 +57,12 @@ class WReN:
         self.processes = pd.concat([self.processes, temp])
         self.active_processes = np.append(self.active_processes, True)
 
-        if HENOS_oe_tree is not None:
+        if GUI_oe_tree is not None:
             temp_diff = t2 - t1
             temp_diff = temp_diff.tolist() * self.delta_temp_unit
             oeDataVector = [stream_name, t1, t2, cp*flow_rate, cp*flow_rate*temp_diff]
             print(oeDataVector)
-            HENOS_oe_tree.receive_new_stream(oeDataVector)
+            GUI_oe_tree.receive_new_stream(oeDataVector)
 
     def activate_process(self, processes_to_change):
         if isinstance(processes_to_change, str): # Only one process name was passed
@@ -810,7 +809,7 @@ class WReN:
 
 
     def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, exchanger_delta_t = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), 
-        exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0, pressure_unit = unyt.Pa, HENOS_oe_tree = None):
+        exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0, pressure_unit = unyt.Pa, GUI_oe_tree = None):
 
         # General data validation
         if exchanger_type.casefold() in {'fixed head', 'fixed', 'fixed-head'}:
@@ -952,10 +951,10 @@ class WReN:
         self.streams[stream2].connected_exchangers.append(exchanger_name)
         
         # 
-        if HENOS_oe_tree is not None:
+        if GUI_oe_tree is not None:
             oeDataVector = [exchanger_name, stream1, stream2, heat, self.exchangers[exchanger_name].cost_fob, 'Active']
             print(oeDataVector)
-            HENOS_oe_tree.receive_new_exchanger(oeDataVector)
+            GUI_oe_tree.receive_new_exchanger(oeDataVector)
         
     def save(self, name, overwrite = False):
         if "." in name:

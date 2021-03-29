@@ -1016,7 +1016,6 @@ class HEN:
         self.streams[stream1].connected_exchangers.append(exchanger_name) # Used when the stream is deleted
         self.streams[stream2].connected_exchangers.append(exchanger_name)
         
-        # 
         if GUI_oe_tree is not None:
             oeDataVector = [exchanger_name, stream1, stream2, heat, self.exchangers[exchanger_name].cost_fob, 'Active']
             print(oeDataVector)
