@@ -61,19 +61,16 @@ class HENOS_app():
         self.HENOS_dropdown_menu.add_cascade(label='Settings')
         
         # Placing control panel elements
-        
-        control_panel_Tab.rowconfigure(2, weight=1)
-        control_panel_Tab.rowconfigure(3, weight=2)
-        control_panel_Tab.rowconfigure(4, weight=10)
+        control_panel_Tab.rowconfigure(4, weight=1)
         control_panel_Tab.columnconfigure(9, weight=1)
         
-        self.HENOS_si_frame.grid(row=0, rowspan=3, column=0, sticky='nsew')
+        self.HENOS_si_frame.grid(row=0, rowspan=2, column=0, sticky='nsew')
         
-        self.HENOS_ga_frame.grid(row=0, column=9, sticky='new')
-        self.HENOS_os_frame.grid(row=2, rowspan=2, column=9,  sticky='nsew')
+        self.HENOS_ga_frame.grid(row=0, column=9, sticky='nsew')
+        self.HENOS_os_frame.grid(row=1, rowspan=2, column=9,  sticky='new')
         
-        self.HENOS_object_explorer.grid(row=3, column=0, rowspan=40, columnspan=8, sticky='nsew')
-        self.HENOS_uc_frame.grid(row=4, column=9, sticky='nsew')
+        self.HENOS_object_explorer.grid(row=2, column=0, rowspan=40, columnspan=8, sticky='nsew')
+        self.HENOS_uc_frame.grid(row=3, column=9, rowspan=3, sticky='nsew')
     
     def savefile(self):
         self.HEN_object.save('alcheme_HEN')
@@ -207,7 +204,7 @@ class HENOS_stream_input(ttk.Frame):
                             m[0].grid(row = row, column=col, sticky='w')
                             self.input_entries[str([row, col])] = m[1]
                         elif col == 7:
-                            m = create_dropdown_menu(self, ['J/(m²·s·°C)'])
+                            m = create_dropdown_menu(self, ['J/(°C·m²·s)'])
                             m[0].grid(row = row, column=col, sticky='w')
                             self.input_entries[str([row, col])] = m[1]
                             
@@ -335,17 +332,17 @@ class HENOS_stream_input(ttk.Frame):
         
         if raw_input[1] not in streamList:
             errorFlag = True
-            errorMessage = 'ERROR: Hot stream ' + raw_input[1] + ' does not exist'
+            errorMessage = 'Hot stream ' + raw_input[1] + ' does not exist'
         elif self.HEN_object.streams[raw_input[1]].stream_type != 'Hot':
             errorFlag = True
-            errorMessage = 'ERROR: Stream ' + raw_input[1] + ' is not a hot stream'
+            errorMessage = 'Stream ' + raw_input[1] + ' is not a hot stream'
         
         if raw_input[2] not in streamList:
             errorFlag = True
-            errorMessage = 'ERROR: Cold stream ' + raw_input[2] + 'does not exist'
+            errorMessage = 'Cold stream ' + raw_input[2] + 'does not exist'
         elif self.HEN_object.streams[raw_input[2]].stream_type != 'Cold':
             errorFlag = True
-            errorMessage = 'ERROR: Stream ' + raw_input[2] + ' is not a cold stream'
+            errorMessage = 'Stream ' + raw_input[2] + ' is not a cold stream'
         
         # Convert temperature units into unyt
         if raw_input[4] == '°C':
@@ -354,6 +351,7 @@ class HENOS_stream_input(ttk.Frame):
             raw_input[4] = unyt.degF
         else:
             raw_input[4] = unyt.degK
+        
         
         # Convert heat load units into unyt
         if raw_input[7] == 'W':
@@ -370,7 +368,7 @@ class HENOS_stream_input(ttk.Frame):
             raw_input[-3] = unyt.psi
         
         # Convert heat transfer coefficient units into unyt
-        if raw_input[-1] == 'J/(m²·s·°C)':
+        if raw_input[-1] == 'J/(°C·m²·s)':
             raw_input[-1] = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC)
         
         # Check if cost parameter A and B exist, set to 0
@@ -389,17 +387,15 @@ class HENOS_stream_input(ttk.Frame):
         else:
             raw_input[5] = 2
         
-        # If there are no errors, clear all entries, submit to HEN object
+        # Submit exchanger to back end
+        self.HEN_object.add_exchanger(stream1 = raw_input[1], stream2 = raw_input[2], ref_stream = raw_input[5], t_in = raw_input[6], t_out=0, exchanger_name = raw_input[0], exchanger_type = raw_input[8], cost_a = raw_input[9], cost_b = raw_input[10], pressure = raw_input[11], pressure_unit = raw_input[12])
+        
+        # If there are no errors, clear all entries
         if errorFlag == False:
             for row5col in [0, 1, 2, 4, 9]:
                 self.input_entries[str([5, row5col])].delete(0, 'end')
             for row7col in [1, 2, 4, 6]:
                 self.input_entries[str([7, row7col])].delete(0, 'end')
-            self.HEN_object.add_exchanger(stream1 = raw_input[1], stream2 = raw_input[2], ref_stream = raw_input[5], exchanger_delta_t = raw_input[6], exchanger_name = raw_input[0], exchanger_type = raw_input[8], cost_a = raw_input[9], cost_b = raw_input[10], pressure = raw_input[11], pressure_unit = raw_input[12])
-
-        # If there is an error, print the errorFlag
-        if errorFlag == True:
-            self.HEN_object_explorer.objectVisualizer.print2screen(errorMessage, True)
         
         print(raw_input)
         
@@ -446,7 +442,7 @@ class HENOS_object_explorer(ttk.Frame):
         self.objectVisualizer = HENOS_objE_display(self, self.HEN_object)
         
         # Initialize object explorer control buttons
-        self.delete_stream = ttk.Button(self, text='Delete Object', command=self.objectExplorer.delete_item)
+        self.delete_stream = ttk.Button(self, text='Delete Stream', command=self.objectExplorer.delete_item)
         self.activate_deactivate_stream = ttk.Button(self, text='Activate/Deactivate Stream', command=self.objectExplorer.activate_deactivate_stream)
         self.delete_stream.grid(row=0, column=3, padx=5)
         self.activate_deactivate_stream.grid(row=0, column=2, padx=5)
@@ -586,7 +582,7 @@ class HENOS_objE_display(tk.Text):
             commandtext = str('displaying object ' + object_name + '...\n')
             self.insert('end', commandtext)
             if tag == 'stream':
-                displaytext = str(self.HEN_object.streams[object_name])
+                displaytext = str(self.HEN_object.stream[object_name])
             elif tag == 'hx':
                 displaytext = str(self.HEN_object.exchanger[object_name])
             elif tag == 'utility':
@@ -633,10 +629,10 @@ class HENOS_graphical_analysis_controls(ttk.Frame):
         show_properties = ttk.Checkbutton(self, text='Show Properties', variable=self.showP, offvalue=False, onvalue=True)
         
         # Place
-        generate_cc.grid(row=1, column=0, padx=(0,15))
-        generate_tid.grid(row=1, column=2, padx=(15,0))
-        show_temperatures.grid(row=1, column=3, padx=5)
-        show_properties.grid(row=1, column=4, padx=5)
+        generate_cc.grid(row=1, column=0, padx=(0,15), pady=(12.5,0))
+        generate_tid.grid(row=1, column=2, padx=(15,0), pady=(12.5,0))
+        show_temperatures.grid(row=1, column=3, padx=5, pady=(12.5,0))
+        show_properties.grid(row=1, column=4, padx=5, pady=(12.5,0))
     
     def make_CC(self):
         self.HEN_object.get_parameters()
@@ -687,6 +683,21 @@ class HENOS_optimization_controls(ttk.Frame):
         frmCold = ttk.Entry(self, width=12)
         frmButton = ttk.Button(self, text='Add Constraint', command=self.add_spec_match)
         
+        # Initialize exchanger settings
+        exchLabel = ttk.Label(self, text='Heat Exchanger Settings', font=('TkDefaultFont', 9, 'italic', 'underline'))
+        exchType = create_dropdown_menu(self, ['Fixed Head', 'Floating Head', 'U Tube', 'Kettle Vaporizer'])
+        exchUL = ttk.Label(self, text='U')
+        exchU = ttk.Entry(self, width=12)
+        exchUnits = create_dropdown_menu(self, ['J/(°C·m²·s)'])
+        
+        # Initialize solution depth settings
+        depthLabel = ttk.Label(self, text='Solution Depth Setting', font=('TkDefaultFont', 9, 'italic', 'underline'))
+        depthButtonMinus = ttk.Button(self, text='-', width=3, command=self.subtract_depth)
+        depthButtonPlus = ttk.Button(self, text='+', width=3, command=self.add_depth)
+        self.depthCount = tk.IntVar()
+        self.depthCount.set(0)
+        depthCounter = ttk.Label(self, textvariable=self.depthCount, background='white', width=8, anchor='center')
+        
         # Initialize 'Run HEN Optimization' button
         rhoButton = ttk.Button(self, text='Run HEN Optimization', command=self.run_optimization)
         
@@ -727,11 +738,34 @@ class HENOS_optimization_controls(ttk.Frame):
         self.input_entries[str([7, 1])] = frmHot
         self.input_entries[str([7, 2])] = frmCold
 
+        # Arrange exchanger settings input
+        exchLabel.grid(row=8, column=0, pady=(25,0))
+        exchUL.grid(row=8, column=1, pady=(25,0))
+        exchType[0].grid(row=9, column=0)
+        exchU.grid(row=9, column=1)
+        exchUnits[0].grid(row=9, column=2, sticky='w')
+        
+        # Assign values to exchanger settings input
+        self.input_entries[str([9, 0])] = exchType[1]
+        self.input_entries[str([9,1])] = exchU
+        self.input_entries[str([9,2])] = exchUnits[1]
+        
+        # Arrange solution depth settings 
+        self.columnconfigure(3, weight=1)
+        depthLabel.grid(row=8, column=3, columnspan=3, pady=(25,0))
+        depthButtonMinus.grid(row=9, column=3, sticky='e')
+        depthCounter.grid(row=9, column=4, sticky='nsew')
+        depthButtonPlus.grid(row=9, column=5, sticky='w')
+        
+        # Assign values to solution depth input
+        self.input_entries[str([9,4])] = depthCounter
+        
         # Place 'Run HEN Optimization' button        
         self.columnconfigure(2, weight=1)
-        rhoButton.grid(row=8, column=2, pady=(50, 0))
+        rhoButton.grid(row=10, column=2, pady=(25,20))
         
     def run_optimization(self):
+        errorFlag = False
         self.HEN_object_explorer.objectVisualizer.print2screen('Running HEN optimization method...', False)
         self.HEN_object.get_parameters()
         ucTree = self.HEN_uC_explorer.ucExplorer
@@ -740,32 +774,18 @@ class HENOS_optimization_controls(ttk.Frame):
                 dataVector = ucTree.item([constraint], 'values')
                 hot_stream = dataVector[0]
                 cold_stream = dataVector[1]
-                
-                streamList = self.HEN_object.streams.keys()
-                hotutilityList = self.HEN_object.hot_utilities.keys()
-                coldutilityList = self.HEN_object.cold_utilities.keys()
-                
-                if hot_stream in streamList:
-                    hot_streamidx = self.HEN_object.streams.iloc[self.HEN_object.hot_streams].index.get_loc(hot_stream) + len(self.HEN_object.hot_utilities)
-                elif hot_stream in hotutilityList:
-                    hot_streamidx = self.HEN_object.hot_utilities.index.get_loc(hot_stream)
-                    
-                if cold_stream in streamList:
-                    cold_streamidx = self.HEN_object.streams.iloc[~self.HEN_object.hot_streams].index.get_loc(cold_stream) + len(self.HEN_object.cold_utilities)
-                elif cold_stream in coldutilityList:
-                    cold_streamidx = self.HEN_object.cold_utilities.index.get_loc(cold_stream)
-                
+                hot_streamidx = self.HEN_object.streams.iloc[self.HEN_object.hot_streams].index.get_loc(hot_stream) + len(self.HEN_object.hot_utilities)
+                cold_streamidx = self.HEN_object.streams.iloc[~self.HEN_object.hot_streams].index.get_loc(cold_stream) + len(self.HEN_object.cold_utilities)
                 # For heat transfer limit constraints (upper/lower)
                 if constraint_type == '0' or constraint_type == '1':
                     # Data sanitation for heat transfer limit units
                     heatlimitraw = dataVector[2].strip().split()
-                    heatlimit = heatlimitraw[0]
-                    #if heatlimitraw[1] == 'W':
-                        #heatlimit = float(heatlimitraw[0])*unyt.W
-                    #elif heatlimitraw[1] == 'kcal/s':
-                        #heatlimit = float(heatlimitraw[0])*unyt.cal/unyt.s
-                    #else:
-                        #heatlimit = float(heatlimitraw[0])*unyt.BTU/unyt.s
+                    if heatlimitraw[1] == 'W':
+                        heatlimit = float(heatlimitraw[0])*unyt.W
+                    elif heatlimitraw[1] == 'kcal/s':
+                        heatlimit = float(heatlimitraw[0])*unyt.cal/unyt.s
+                    else:
+                        heatlimit = float(heatlimitraw[0])*unyt.BTU/unyt.s
                     # Place heat limit constraint into associated matrix
                     if constraint_type == '0':
                         self.HEN_object.upper_limit[hot_streamidx, cold_streamidx] = heatlimit
@@ -778,7 +798,6 @@ class HENOS_optimization_controls(ttk.Frame):
                         self.HEN_object.forbidden[hot_streamidx, cold_streamidx] = True
                     elif constraint_type == '3':
                         self.HEN_object.required[hot_streamidx, cold_streamidx] = True
-        print(self.HEN_object.upper_limit)
         
         # Check to ensure upper limit matrix is nonzero; if not, set to None
         if np.count_nonzero(self.HEN_object.upper_limit) == 0:
@@ -786,8 +805,27 @@ class HENOS_optimization_controls(ttk.Frame):
         
         # NEED TO ADD CONSTRAINTS WITH UTILITIES
         
-        [matchLocs, heatLocs] = self.HEN_object.place_exchangers(pinch = str(self.pinchLoc.get()), upper = self.HEN_object.upper_limit, lower = self.HEN_object.lower_limit, forbidden = self.HEN_object.forbidden, required = self.HEN_object.required)
+        # Read heat exchanger and solution depth settings input
+        raw_input = []
+        for col in [0, 1, 2, 4]:
+            if col == 4:
+                rawdata = self.depthCount.get()
+            else:
+                rawdata = self.input_entries[str([9, col])].get()
+            if rawdata == '': rawdata = None
+            raw_input.append(rawdata) 
+        
+        # Sanitize heat exchanger settings input
+        try:
+            Uvalue = float(raw_input[1])
+        except TypeError:
+            errorFlag = True
+            errorMessage = 'ERROR: Non-numeric heat transfer coefficient input.'
+           
+        # Run solver
+        [matchLocs, heatLocs] = self.HEN_object.solve_HEN(pinch = str(self.pinchLoc.get()), depth=raw_input[-1], upper = self.HEN_object.upper_limit, lower = self.HEN_object.lower_limit, forbidden = self.HEN_object.forbidden, required = self.HEN_object.required, U=Uvalue, U_unit=unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), exchanger_type=raw_input[0])
         self.HEN_object_explorer.objectVisualizer.printsolutionmatrix(str(heatLocs))
+        
     
     def add_heat_limit(self):
         errorFlag = False
@@ -808,9 +846,9 @@ class HENOS_optimization_controls(ttk.Frame):
 
         dataVec = [raw_input[1], raw_input[2], float(raw_input[3])*raw_input[4]]
         
-        if raw_input[0] == 'Upper Limit' and raw_input[1] != 'ALL':
+        if raw_input[0] == 'Upper Limit':
             self.HEN_uC_explorer.ucExplorer.add_ul_constraint(dataVec)
-        elif raw_input[0] == 'Lower Limit' and raw_input[1] != 'ALL':
+        else:
             self.HEN_uC_explorer.ucExplorer.add_ll_constraint(dataVec)
         
         if errorFlag == False:
@@ -836,7 +874,14 @@ class HENOS_optimization_controls(ttk.Frame):
         if errorFlag == False:
             for col in [1, 2]:
                 self.input_entries[str([7, col])].delete(0, 'end')
-        
+    
+    def add_depth(self):
+        self.depthCount.set(self.depthCount.get() + 1)
+    
+    def subtract_depth(self):
+        if self.depthCount.get() > 0:
+            self.depthCount.set(self.depthCount.get() - 1)
+    
 class HENOS_user_constraints(ttk.Frame):
     def __init__(self, master):
         # Initialize frame properties
@@ -854,7 +899,8 @@ class HENOS_user_constraints(ttk.Frame):
         
         self.columnconfigure(1, weight=1)
         self.dcButton.grid(row=0, column=3)
-        #self.adcButton.grid(row=0, column=2)                
+        self.adcButton.grid(row=0, column=2)
+    
         
         self.rowconfigure(1, weight=1)
         self.columnconfigure(0, weight=1)
