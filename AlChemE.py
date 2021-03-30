@@ -28,7 +28,7 @@ class ALChemE_app(tk.Frame):
         
         # Set logo
         logo = Image.open(str(pathlib.Path(__file__).parent.absolute()) + '\\ALChemE_logo.png')
-        pixels_x, pixels_y = tuple([int(0.75 * x)  for x in logo.size])
+        pixels_x, pixels_y = tuple([int(0.25 * x)  for x in logo.size])
         logoRender = ImageTk.PhotoImage(logo.resize((pixels_x, pixels_y)))        
         logoPanel = tk.Label(self.master, image=logoRender)
         logoPanel.image = logoRender
