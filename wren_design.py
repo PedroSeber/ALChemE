@@ -23,16 +23,28 @@ class WReN:
         self.processes = pd.Series()
         self.active_processes = np.array([], dtype = np.bool)
     
-    def add_process(self, sink_conc, source_conc, sink_flow, source_flow = None, process_name = None, conc_unit = None, flow_unit = None, GUI_oe_tree = None):
+    def add_process(self, sink_conc, source_conc, sink_flow, source_flow = None, process_name = None, conc_unit = None, flow_unit = None, conc_names = None, GUI_oe_tree = None):
         # Converting to default units (as declared via the WReN class)        
         if conc_unit is None:
-            sink_conc *= self.conc_unit
-            source_conc *= self.conc_unit
+            if isinstance(sink_conc, (list, tuple, pd.Series, np.ndarray)):
+                for idx in range(len(sink_conc)):
+                    sink_conc[idx] *= self.conc_unit
+                    source_conc[idx] *= self.conc_unit
+            else:
+                sink_conc *= self.conc_unit
+                source_conc *= self.conc_unit
         else:
-            sink_conc *= conc_unit
-            sink_conc = sink_conc.to(self.conc_unit)
-            source_conc *= conc_unit
-            source_conc = source_conc.to(self.conc_unit)
+            if isinstance(sink_conc, (list, tuple, pd.Series, np.ndarray)):
+                for idx in range(len(sink_conc)):
+                    sink_conc[idx] *= conc_unit
+                    sink_conc[idx] = sink_conc[idx].to(self.conc_unit)
+                    source_conc[idx] *= conc_unit
+                    source_conc[idx] = source_conc[idx].to(self.conc_unit)
+            else:
+                sink_conc *= conc_unit
+                sink_conc = sink_conc.to(self.conc_unit)
+                source_conc *= conc_unit
+                source_conc = source_conc.to(self.conc_unit)
         
         if source_flow is None:
             source_flow = sink_flow
@@ -50,10 +62,16 @@ class WReN:
             idx = 1
             while f'P{idx}' in self.processes.keys():
                 idx += 1
-            process_name = f'{letter}{idx}'
+            process_name = f'P{idx}'
+        
+        # Transforming concentrations from a container to a Pandas DataFrame
+        # A single contaminant is of the unyt.array.unyt_quantity type
+        if isinstance(sink_conc, (list, tuple, np.ndarray)) and not isinstance(sink_conc, unyt.array.unyt_quantity):
+            sink_conc = pd.Series(sink_conc, index = conc_names)
+            source_conc = pd.Series(source_conc, index = conc_names)
 
         # Generating the process object and adding it to the WReN object
-        temp = pd.Series(Process(sink_conc, source_couc, sink_flow, source_flow), [process_name])
+        temp = pd.Series(Process(sink_conc, source_conc, sink_flow, source_flow), [process_name])
         self.processes = pd.concat([self.processes, temp])
         self.active_processes = np.append(self.active_processes, True)
 
@@ -213,108 +231,6 @@ class WReN:
         self.lower_limit = np.zeros_like(self.upper_limit)
         self.forbidden = np.zeros_like(self.upper_limit, dtype = np.bool)
         self.required = np.zeros_like(self.forbidden)
-
-    def make_tid(self, show_temperatures = True, show_properties = True, tab_control = None):
-        """
-        This function plots a temperature-interval diagram using the streams and exchangers currently associated with this HEN object.
-        self.get_parameters() must be called before this function.
-        """
-        # Changing standard plotting options
-        plt.rcParams['axes.titlesize'] = 5
-        plt.rcParams['axes.labelsize'] = 5
-        plt.rcParams['font.size'] = 3
-
-        # Starting array from class data
-        temperatures = np.empty( (len(self.streams) - np.sum(~self.active_streams), 2) )
-        cp_vals = np.empty( (len(self.streams) - np.sum(~self.active_streams), 1) )
-        x_tick_labels = np.empty(len(temperatures), dtype = 'object') # The names of the streams
-
-        # We want the hot streams to come first on this plot
-        hot_idx = 0
-        cold_idx = -len(temperatures) + np.sum(self.hot_streams&self.active_streams)
-        for values in self.streams.items(): # values[0] has the stream names, values[1] has the properties
-            if values[1].active: # Checks whether stream is active
-                if values[1].t1 > values[1].t2: # Hot stream
-                    temperatures[hot_idx, 0] = self._plotted_ylines.searchsorted(values[1].t1) # Conversion from temperature to an index; used to plot equidistant lines
-                    temperatures[hot_idx, 1] = self._plotted_ylines.searchsorted(values[1].t2)
-                    cp_vals[hot_idx, 0] = values[1].cp.value
-                    x_tick_labels[hot_idx] = values[0]
-                    hot_idx += 1
-                else: # Cold stream
-                    temperatures[cold_idx, 0] = self._plotted_ylines.searchsorted(values[1].t1 + self.delta_t) # Need to add ΔT 
-                    temperatures[cold_idx, 1] = self._plotted_ylines.searchsorted(values[1].t2 + self.delta_t)
-                    cp_vals[cold_idx, 0] = values[1].cp.value
-                    x_tick_labels[cold_idx] = values[0]
-                    cold_idx += 1
-
-        # Plotting the temperature graphs
-        fig1, ax1 = plt.subplots(dpi = 350)
-        ax1.set_title('Temperature Interval Diagram')
-        ax1.set_xlim(0, 1)
-        ax1.set_ylim(-0.5 - 0.5*(len(self._plotted_ylines)//10), len(self._plotted_ylines) - 0.5 + 0.5*(len(self._plotted_ylines)//10)) #len()//10 is a correction for HEN with many temperature intervals
-        ax1.set_yticks([])
-        q_above_text_loc = ax1.get_ylim()[1] - 0.01*(ax1.get_ylim()[1] - ax1.get_ylim()[0])
-        q_below_text_loc = ax1.get_ylim()[0] + 0.04*(ax1.get_ylim()[1] - ax1.get_ylim()[0])
-        cp_text_loc = ax1.get_ylim()[0] + 0.01*(ax1.get_ylim()[1] - ax1.get_ylim()[0])
-        # Setting the hot streams area and the cold streams area. Streams should be equally spaced
-        # Hot streams go from 0.01 to 0.49; cold streams go from 0.51 to 0.99
-        hot_distance = 0.48 / (sum(self.hot_streams&self.active_streams) + 1)
-        hot_idx = 1
-        cold_distance = 0.48 / (sum(~self.hot_streams&self.active_streams) + 1)
-        cold_idx = 1
-        x_tick_loc = [0] * len(temperatures)
-        
-        # Manipulating the temperatures so that the hot and cold values are on the same y-position, even though they're shifted by delta_t
-        for idx in range(len(temperatures)):
-            if temperatures[idx, 0] > temperatures[idx, 1]:
-                my_color = 'r'
-                my_marker = 'v'
-                horizontal_loc = 0.01 + hot_idx * hot_distance
-                hot_idx += 1
-            else:
-                my_color = 'b'
-                my_marker = '^'
-                horizontal_loc = 0.51 + cold_idx * cold_distance
-                cold_idx += 1
-
-            x_tick_loc[idx] = horizontal_loc
-            ax1.vlines(horizontal_loc, temperatures[idx, 0], temperatures[idx, 1], color = my_color, linewidth = 0.25) # Vertical line for each stream
-            ax1.plot(horizontal_loc, temperatures[idx, 1], color = my_color, marker = my_marker, markersize = 1) # Marker at the end of each vertical line
-            if show_properties:
-                q_above_text = r'$Q_{Top}$: %g %s' % (self.streams[x_tick_labels[idx]].q_above, self.heat_unit)
-                ax1.text(horizontal_loc, q_above_text_loc, q_above_text, ha = 'center', va = 'top') # Heat above the pinch point
-                q_below_text = r'$Q_{Bot}$: %g %s' % (self.streams[x_tick_labels[idx]].q_below, self.heat_unit)
-                ax1.text(horizontal_loc, q_below_text_loc, q_below_text, ha = 'center', va = 'bottom') # Heat below the pinch point
-                cp_unit_plot = str(self.cp_unit * self.flow_unit).replace('delta_deg', '°', 1)
-                cp_text = r'$Fc_p$: %g %s' % (cp_vals[idx], cp_unit_plot)
-                ax1.text(horizontal_loc, cp_text_loc, cp_text, ha = 'center', va = 'bottom') # Heat below the pinch point
-        
-        # Horizontal lines for each temperature
-        for idx, elem in enumerate(self._plotted_ylines):
-            ax1.axhline(idx, color = 'k', linewidth = 0.25)
-            if show_temperatures:
-                my_label1 = str(elem) + str(self.temp_unit) + '               ' # Extra spaces are used to pseudo-center the text
-                my_label2 = '               ' + str(elem - self.delta_t.value) + str(self.temp_unit)
-                ax1.text(np.mean(ax1.get_xlim()), idx, my_label1, ha = 'center', va = 'bottom', c = 'red')
-                ax1.text(np.mean(ax1.get_xlim()), idx, my_label2, ha = 'center', va = 'bottom', c = 'blue')
-        
-        # Labeling the x-axis with the stream names
-        ax1.set_xticks(x_tick_loc)
-        ax1.set_xticklabels(x_tick_labels)
-
-        # Adding the pinch point
-        if self.first_utility_loc:
-            ax1.axhline(len(self._plotted_ylines)-self.first_utility_loc-2, color = 'k', linewidth = 0.5) # Xth interval but (X-1)th line, that's why we need a -2
-            if show_temperatures:
-                ax1.text(np.mean(ax1.get_xlim()), len(self._plotted_ylines)-self.first_utility_loc-2 - 0.01, 'Pinch Point', ha = 'center', va = 'top')
-        else:
-            ax1.axhline(len(self._plotted_ylines) - 1, color = 'k', linewidth = 0.5)
-            if show_temperatures:
-                ax1.text(np.mean(ax1.get_xlim()), len(self._plotted_ylines) - 1 - 0.01, 'Pinch Point', ha = 'center', va = 'top')
-        
-        plt.show(block = False)
-        if tab_control: # Embed into GUI
-            generate_GUI_plot(fig1, tab_control, 'Temperature Interval Diagram')
 
     def make_cc(self, tab_control = None):
         plt.rcParams['axes.titlesize'] = 5
@@ -723,90 +639,6 @@ class WReN:
                 self.exchanger_costs_below = np.array((None, costs))
 
         return Y_results, Q_tot_results, costs
-    
-    def get_more_sols(self, pinch, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), exchanger_type = 'Fixed Head'):
-        # Setup
-        forbidden = self.forbidden
-        required = self.required
-        iter_count = 1
-
-        if pinch.casefold() in {'above', 'top', 'up'}:
-            total_count = self.Q_tot_above[1].shape[0]*self.Q_tot_above[1].shape[1] - np.sum(self.always_forbidden_above)
-            for rowidx in range(self.Q_tot_above[1].shape[0]):
-                for colidx in range(self.Q_tot_above[1].shape[1]):
-                    # Match will never occur, so don't bother calling place_exchangers()
-                    if self.always_forbidden_above[rowidx, colidx] or self.required[rowidx, colidx] or self.forbidden[rowidx, colidx]:
-                        continue
-                    # Original solution had a match here, so we'll try forbidding it
-                    elif self.Q_tot_above[1].iat[rowidx, colidx] > 0:
-                        self.forbidden[rowidx, colidx] = True
-                    # Original solution didn't have a match here, so we'll try requiring it
-                    elif self.Q_tot_above[1].iat[rowidx, colidx] == 0:
-                        self.required[rowidx, colidx] = True
-                    
-                    print(f'Iteration {iter_count} out of {total_count}')
-                    try:
-                        unique_sol = True
-                        _, Q_tot, costs = self.place_exchangers(pinch, self.upper_limit, self.lower_limit, self.forbidden, self.required, U, U_unit, exchanger_type, called_by_GMS = True)
-                        for prev_sol in self.Q_tot_above[1::2]:
-                            if np.allclose(prev_sol, Q_tot, 0, 1e-6): # Using a 1e-6 absolute tolerance to compare heats
-                                unique_sol = False
-                                continue
-                        if unique_sol:
-                            self.Q_tot_above = np.append(self.Q_tot_above, np.array((None, Q_tot)), axis = 0)
-                            self.exchanger_costs_above = np.append(self.exchanger_costs_above, np.array((None, costs)), axis = 0)
-                            print(f'Found a unique solution during iteration {iter_count}')
-                    except Exception:
-                        pass
-                    finally:
-                        # Restoring the forbidden / required matches to their original values
-                        if self.Q_tot_above[1].iat[rowidx, colidx] > 0:
-                            self.forbidden[rowidx, colidx] = False
-                        elif self.Q_tot_above[1].iat[rowidx, colidx] == 0:
-                            self.required[rowidx, colidx] = False
-                        iter_count += 1
-            # Removing None from the list of solutions
-            self.Q_tot_above = self.Q_tot_above[1::2]
-            self.exchanger_costs_above = self.exchanger_costs_above[1::2]
-        elif pinch.casefold() in {'below', 'bottom', 'bot', 'down'}:
-            total_count = self.Q_tot_below[1].shape[0]*self.Q_tot_below[1].shape[1] - np.sum(self.always_forbidden_below)
-            for rowidx in range(self.Q_tot_below[1].shape[0]):
-                for colidx in range(self.Q_tot_below[1].shape[1]):
-                    # Match will never occur or will always occur, so don't bother calling place_exchangers()
-                    if self.always_forbidden_below[rowidx, colidx] or self.required[rowidx, colidx] or self.forbidden[rowidx, colidx]:
-                        continue
-                    # Original solution had a match here, so we'll try forbidding it
-                    elif self.Q_tot_below[1].iat[rowidx, colidx] > 0:
-                        self.forbidden[rowidx, colidx] = True
-                    # Original solution didn't have a match here, so we'll try requiring it
-                    elif self.Q_tot_below[1].iat[rowidx, colidx] == 0:
-                        self.required[rowidx, colidx] = True
-                    
-                    print(f'Iteration {iter_count} out of {total_count}')
-                    try:
-                        unique_sol = True
-                        _, Q_tot, costs = self.place_exchangers(pinch, self.upper_limit, self.lower_limit, self.forbidden, self.required, U, U_unit, exchanger_type, called_by_GMS = True)
-                        for prev_sol in self.Q_tot_below[1::2]:
-                            if prev_sol.equals(Q_tot):
-                                unique_sol = False
-                                continue
-                        if unique_sol:
-                            self.Q_tot_below = np.append(self.Q_tot_below, np.array((None, Q_tot)), axis = 0)
-                            self.exchanger_costs_below = np.append(self.exchanger_costs_below, np.array((None, costs)), axis = 0)
-                            print(f'Found a unique solution during iteration {iter_count}')
-                    except Exception:
-                        pass
-                    finally:
-                        # Restoring the forbidden / required matches to their original values
-                        if self.Q_tot_below[1].iat[rowidx, colidx] > 0:
-                            self.forbidden[rowidx, colidx] = False
-                        elif self.Q_tot_below[1].iat[rowidx, colidx] == 0:
-                            self.required[rowidx, colidx] = False
-                        iter_count += 1
-            # Removing None from the list of solutions
-            self.Q_tot_below = self.Q_tot_below[1::2]
-            self.exchanger_costs_below = self.exchanger_costs_below[1::2]
-
 
     def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, exchanger_delta_t = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), 
         exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0, pressure_unit = unyt.Pa, GUI_oe_tree = None):
@@ -985,42 +817,6 @@ class WReN:
                 file = file_list[0]
         return pickle.load(open(file, 'rb'))
     
-    def _get_maximum_heats(self, upper, pinch, num_of_intervals):
-        """
-        Auxiliary function to calculate the maximum heat transferable between two streams.
-        Shouldn't be called by the user; rather, it is automatically called by place_exchangers().
-        """
-        for rowidx in range(upper.shape[0]):
-            for colidx in range(upper.shape[1]):
-                if rowidx < len(self.hot_utilities) and pinch == 'below': # No hot utilities are used below pinch
-                    upper[rowidx, colidx] = 0
-                elif colidx < len(self.cold_utilities) and pinch == 'above': # No cold utilities are used above pinch
-                    upper[rowidx, colidx] = 0
-                elif rowidx < len(self.hot_utilities) and colidx < len(self.cold_utilities): # No matches between utilities
-                    upper[rowidx, colidx] = 0
-                elif rowidx < len(self.hot_utilities): # Match between hot utility and cold stream
-                    temp_idx = np.sum(self.hot_streams&self.active_streams) + colidx - len(self.cold_utilities)
-                    if pinch == 'above':
-                        upper[rowidx, colidx] = np.min((self.first_utility, np.sum(self._interval_heats[self.active_streams][temp_idx, -num_of_intervals-1:]) ))
-                    else:
-                        upper[rowidx, colidx] = np.min((self.first_utility, np.sum(self._interval_heats[self.active_streams][temp_idx, :num_of_intervals]) ))
-                elif colidx < len(self.cold_utilities): # Match between hot stream and cold utility
-                    temp_idx = rowidx - len(self.hot_utilities)
-                    if pinch == 'above':
-                        upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[self.active_streams][temp_idx, -num_of_intervals-1:]), self.last_utility))
-                    else:
-                        upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[self.active_streams][temp_idx, :num_of_intervals]), self.last_utility))
-                else: # Match between two streams
-                    temp_idx1 = rowidx - len(self.hot_utilities)
-                    temp_idx2 = np.sum(self.hot_streams&self.active_streams) + colidx - len(self.cold_utilities)
-                    if pinch == 'above':
-                        lowest_cold = (self._interval_heats[self.active_streams][temp_idx2, -num_of_intervals:] != 0).argmax()
-                        upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[self.active_streams][temp_idx1, -num_of_intervals+lowest_cold:]), np.sum(self._interval_heats[self.active_streams][temp_idx2, -num_of_intervals:]) ))
-                    else:
-                        lowest_cold = (self._interval_heats[self.active_streams][temp_idx2, :num_of_intervals] != 0).argmax()
-                        upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[self.active_streams][temp_idx1, lowest_cold:num_of_intervals]), np.sum(self._interval_heats[self.active_streams][temp_idx2, :num_of_intervals]) ))
-        return upper
-
 class Process():
     def __init__(self, sink_conc, source_conc, sink_flow, source_flow):
         self.sink_conc = sink_conc
@@ -1030,7 +826,18 @@ class Process():
         self.active = True
     
     def __repr__(self):
-        text =(f'A process with sink concentration = {self.sink_conc} and source concentration = {self.source_conc}\n'
+        # Formatting the concentrations
+        if isinstance(self.sink_conc, pd.Series):
+            print_sink_conc = []
+            print_source_conc = []
+            for name in self.sink_conc.index:
+                print_sink_conc.append(f'{name}: {self.sink_conc[name]}')
+                print_source_conc.append(f'{name}: {self.source_conc[name]}')
+        else:
+            print_sink_conc = self.sink_conc
+            print_source_conc = self.source_conc
+        
+        text =(f'A process with sink concentration = {print_sink_conc} and source concentration = {print_source_conc}\n'
              f'sink flow = {self.sink_flow} and source flow = {self.source_flow}\n')
         return text
 
