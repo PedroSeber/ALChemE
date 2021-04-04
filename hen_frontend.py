@@ -11,7 +11,9 @@ from hen_design import HEN
 from hen_design import generate_GUI_plot
 import subprocess
 
+##############################################################################
 # CLASSES
+##############################################################################
 class HEN_GUI_app():
     '''
     A class which holds the HEN_GUI application. Slave of root window.
@@ -54,9 +56,8 @@ class HEN_GUI_app():
         # Intialize dropdown menu options
         self.fileMenu = tk.Menu(self.HEN_GUI_dropdown_menu, tearoff=0)
         self.fileMenu.add_command(label='New')
-        self.fileMenu.add_command(label='Open', command=self.loadfile)
-        self.fileMenu.add_command(label='Save', command=self.savefile)
         self.fileMenu.add_command(label='Save As', command=self.savefile)
+        self.fileMenu.add_command(label='Load', command=self.loadfile)
         self.HEN_GUI_dropdown_menu.add_cascade(label='File', menu=self.fileMenu)
         self.HEN_GUI_dropdown_menu.add_cascade(label='Settings')
         
@@ -73,10 +74,28 @@ class HEN_GUI_app():
         self.HEN_GUI_uc_frame.grid(row=3, column=9, rowspan=3, sticky='nsew')
     
     def savefile(self):
-        self.HEN_object.save('alcheme_HEN')
+        # Open system file explorer
+        filename = tk.filedialog.asksaveasfilename(initialdir='/', title='Select a File', filetypes = (("Text files",
+                                                        "*.txt*"),
+                                                       ("all files",
+                                                        "*.*")))
+        # Run save function
+        self.HEN_object.save(filename)
     
     def loadfile(self):
-        self.HEN_object.load()
+        # Open system file explorer
+        filename = tk.filedialog.askopenfilename(initialdir='/', title='Select a File', filetypes = (("Text files",
+                                                        "*.txt*"),
+                                                       ("all files",
+                                                        "*.*")))
+        # Run load function
+        self.HEN_object.load(filename)
+        print(filename)
+        
+        # Populate object explorer
+        print(self.HEN_object.streams)
+        #for element in self.HEN_object.streams:
+        #    print(element)
 
 class HEN_GUI_stream_input(ttk.Frame):
     '''
@@ -388,7 +407,7 @@ class HEN_GUI_stream_input(ttk.Frame):
             raw_input[5] = 2
         
         # Submit exchanger to back end
-        self.HEN_object.add_exchanger(stream1 = raw_input[1], stream2 = raw_input[2], ref_stream = raw_input[5], t_in = raw_input[6], t_out=0, exchanger_name = raw_input[0], exchanger_type = raw_input[8], cost_a = raw_input[9], cost_b = raw_input[10], pressure = raw_input[11], pressure_unit = raw_input[12])
+        self.HEN_object.add_exchanger(stream1 = raw_input[1], stream2 = raw_input[2], ref_stream = raw_input[5], exchanger_delta_t = raw_input[3], exchanger_name = raw_input[0], exchanger_type = raw_input[8], cost_a = raw_input[9], cost_b = raw_input[10], pressure = raw_input[11], pressure_unit = raw_input[12], U=raw_input[13], U_unit=raw_input[14], GUI_oe_tree=self.HEN_object_explorer.objectExplorer)
         
         # If there are no errors, clear all entries
         if errorFlag == False:
@@ -442,7 +461,7 @@ class HEN_GUI_object_explorer(ttk.Frame):
         self.objectVisualizer = HEN_GUI_objE_display(self, self.HEN_object)
         
         # Initialize object explorer control buttons
-        self.delete_stream = ttk.Button(self, text='Delete Stream', command=self.objectExplorer.delete_item)
+        self.delete_stream = ttk.Button(self, text='Delete Object', command=self.objectExplorer.delete_item)
         self.activate_deactivate_stream = ttk.Button(self, text='Activate/Deactivate Stream', command=self.objectExplorer.activate_deactivate_stream)
         self.delete_stream.grid(row=0, column=3, padx=5)
         self.activate_deactivate_stream.grid(row=0, column=2, padx=5)
@@ -456,7 +475,6 @@ class HEN_GUI_object_explorer(ttk.Frame):
         self.rowconfigure(1, weight=1)
         self.rowconfigure(41, weight=0)
         self.rowconfigure(42, weight=1)
-        #self.objectExplorer.grid(row=0, column=0)
         self.objectExplorer.grid(row=1, column=0, rowspan=40, columnspan=8, padx=5, pady=(5,15), sticky='nsew')
         self.objectVisualizer.grid(row=42, column=0, rowspan=1, columnspan=8, padx=5, pady=(5,5), sticky='nsew')
 
@@ -503,14 +521,14 @@ class HEN_GUI_objE_tree(ttk.Treeview):
             if tags and (tags[0] == 'selectable'):
                 tree.selection_set(item_name)
         
-    def receive_new_stream(self, oeDataVector):
-        self.insert(self.StreamNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), str(oeDataVector[2]), str(oeDataVector[3]), str(oeDataVector[4]), 'Active'), tags='selectable')
+    def receive_new_stream(self, oeDataVector):            
+        self.insert(self.StreamNode, 'end', text=oeDataVector[0], values=('%.2G' % oeDataVector[1] + ' ' + str(oeDataVector[1].units), '%.2G'  % oeDataVector[2] + ' ' + str(oeDataVector[1].units), '%.2G' % oeDataVector[3] + ' ' + str(oeDataVector[3].units), '%5.2g' % oeDataVector[4] + ' ' + str(oeDataVector[4].units), 'Active'), tags='selectable')
         
     def receive_new_exchanger(self, oeDataVector):
-        self.insert(self.HXNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), str(oeDataVector[2]), str(oeDataVector[3]), str(oeDataVector[4]), 'Active'), tags='selectable')
+        self.insert(self.HXNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), str(oeDataVector[2]), '%.2G'  % oeDataVector[3] + ' ' + str(oeDataVector[3].units), 'Active'), tags='selectable')
     
     def receive_new_utility(self, oeDataVector):
-        self.insert(self.UtilityNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), str(oeDataVector[2]), str(oeDataVector[3]), str(oeDataVector[4]), 'Active'), tags='selectable')
+        self.insert(self.UtilityNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), '%.2G'  % oeDataVector[2] + ' ' + str(oeDataVector[2].units), '%.2G'  % oeDataVector[3] + ' $' + str(oeDataVector[3].units), str(oeDataVector[4]), 'Active'), tags='selectable')
     
     def delete_item(self):
         HEN_selectedObject  = self.selection()[0]
@@ -526,7 +544,7 @@ class HEN_GUI_objE_tree(ttk.Treeview):
             HEN_sO_status = self.item(stream, 'values')[-1]
         
             if HEN_sO_status == 'Active':
-                self.HEN_object.inactivate_stream(HEN_sO_name)
+                self.HEN_object.deactivate_stream(HEN_sO_name)
                 objValues = self.item(stream, 'values')[0:-1]
                 self.insert(self.StreamNode, self.index(stream), text=HEN_sO_name, values=(objValues[0],objValues[1], objValues[2], objValues[3], 'Inactive'), tags='selectable')
                 self.delete(stream)
@@ -570,7 +588,6 @@ class HEN_GUI_objE_display(tk.Text):
         # Initialize >>>
         self.insert('end', '-'*65+ '***INITIALIZED***' + '-'*65 + '\n\n')
         self.insert('end', '>>> ')
-        #self.config(state='disabled')
     
     def print2screen(self, message, newcommand):
         self.insert('end', message + '\n')
@@ -582,9 +599,9 @@ class HEN_GUI_objE_display(tk.Text):
             commandtext = str('displaying object ' + object_name + '...\n')
             self.insert('end', commandtext)
             if tag == 'stream':
-                displaytext = str(self.HEN_object.stream[object_name])
+                displaytext = str(self.HEN_object.streams[object_name])
             elif tag == 'hx':
-                displaytext = str(self.HEN_object.exchanger[object_name])
+                displaytext = str(self.HEN_object.exchangers[object_name])
             elif tag == 'utility':
                 if tag2 == 'hot':
                     displaytext = str(self.HEN_object.hot_utilities[object_name])
@@ -769,13 +786,25 @@ class HEN_GUI_optimization_controls(ttk.Frame):
         self.HEN_object_explorer.objectVisualizer.print2screen('Running HEN optimization method...', False)
         self.HEN_object.get_parameters()
         ucTree = self.HEN_uC_explorer.ucExplorer
+        hotProcessStreams = self.HEN_object.streams.iloc[self.HEN_object.hot_streams].keys()
+        coldProcessStreams = self.HEN_object.streams.iloc[~self.HEN_object.hot_streams].keys()
+        hotUtilities = self.HEN_object.hot_utilities.keys()
+        coldUtilities = self.HEN_object.cold_utilities.keys()
         for constraint_type in ucTree.get_children():
             for constraint in ucTree.get_children([constraint_type]):
+                # Extract user input data
                 dataVector = ucTree.item([constraint], 'values')
                 hot_stream = dataVector[0]
                 cold_stream = dataVector[1]
-                hot_streamidx = self.HEN_object.streams.iloc[self.HEN_object.hot_streams].index.get_loc(hot_stream) + len(self.HEN_object.hot_utilities)
-                cold_streamidx = self.HEN_object.streams.iloc[~self.HEN_object.hot_streams].index.get_loc(cold_stream) + len(self.HEN_object.cold_utilities)
+                # Determine if hot/cold streams refer to process streams or utilities and assign indices accordingly
+                if hot_stream in hotProcessStreams:    
+                    hot_streamidx = self.HEN_object.streams.iloc[self.HEN_object.hot_streams].index.get_loc(hot_stream) + len(self.HEN_object.hot_utilities)
+                else:
+                    hot_streamidx = self.HEN_object.hot_utilities.index.get_loc(hot_stream)
+                if cold_stream in coldProcessStreams:    
+                    cold_streamidx = self.HEN_object.streams.iloc[~self.HEN_object.hot_streams].index.get_loc(cold_stream) + len(self.HEN_object.cold_utilities)
+                else:
+                    cold_streamidx = self.HEN_object.hot_utilities.index.get_loc(cold_stream)
                 # For heat transfer limit constraints (upper/lower)
                 if constraint_type == '0' or constraint_type == '1':
                     # Data sanitation for heat transfer limit units
@@ -812,7 +841,7 @@ class HEN_GUI_optimization_controls(ttk.Frame):
                 rawdata = self.depthCount.get()
             else:
                 rawdata = self.input_entries[str([9, col])].get()
-            if rawdata == '': rawdata = None
+            if rawdata == '': rawdata = 100
             raw_input.append(rawdata) 
         
         # Sanitize heat exchanger settings input
@@ -823,8 +852,31 @@ class HEN_GUI_optimization_controls(ttk.Frame):
             errorMessage = 'ERROR: Non-numeric heat transfer coefficient input.'
            
         # Run solver
-        [matchLocs, heatLocs] = self.HEN_object.solve_HEN(pinch = str(self.pinchLoc.get()), depth=raw_input[-1], upper = self.HEN_object.upper_limit, lower = self.HEN_object.lower_limit, forbidden = self.HEN_object.forbidden, required = self.HEN_object.required, U=Uvalue, U_unit=unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), exchanger_type=raw_input[0])
-        self.HEN_object_explorer.objectVisualizer.printsolutionmatrix(str(heatLocs))
+        if errorFlag == False:
+            self.HEN_object.solve_HEN(pinch = str(self.pinchLoc.get()), depth=raw_input[-1], upper = self.HEN_object.upper_limit, lower = self.HEN_object.lower_limit, forbidden = self.HEN_object.forbidden, required = self.HEN_object.required, U=Uvalue, U_unit=unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), exchanger_type=raw_input[0])
+            solNum = 1
+            if str(self.pinchLoc.get()) == 'top':
+                for elem in self.HEN_object.results_above:
+                    qSol = str(elem.loc['Q'])
+                    cSol = str(elem.loc['cost'])
+                    self.HEN_object_explorer.objectVisualizer.print2screen('-'*20, False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen('Solution ' + str(solNum) + '\n', False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen('No. Exchangers: ' + str((elem.loc["Q"]>0).sum().sum()) + '\n', False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen('Cost: $' + str(elem.loc["cost"].sum().sum()) + '\n', False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen(qSol + '\n', False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen(cSol + '\n', False)
+            else:
+                for elem in self.HEN_object.results_below:
+                    qSol = str(elem.loc['Q'])
+                    cSol = str(elem.loc['cost'])
+                    self.HEN_object_explorer.objectVisualizer.print2screen('-'*20, False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen('Solution ' + str(solNum) + '\n', False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen('No. Exchangers: ' + str((elem.loc["Q"]>0).sum().sum()) + '\n', False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen('Cost: $' + str(elem.loc["cost"].sum().sum()) + '\n', False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen(qSol + '\n', False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen(cSol + '\n', False)
+        else:
+            self.HEN_object_explorer.objectVisualizer.print2screen(errorMessage, True)
         
     
     def add_heat_limit(self):
@@ -895,11 +947,9 @@ class HEN_GUI_user_constraints(ttk.Frame):
         self.ucExplorer = HEN_GUI_uC_tree(self)
         
         self.dcButton = ttk.Button(self, text='Delete Constraint', command=self.ucExplorer.delete_constraint)
-        self.adcButton = ttk.Button(self, text='Activate/Deactivate Constraint')
         
         self.columnconfigure(1, weight=1)
         self.dcButton.grid(row=0, column=3)
-        self.adcButton.grid(row=0, column=2)
     
         
         self.rowconfigure(1, weight=1)
