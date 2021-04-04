@@ -8,3 +8,10 @@ dist
 
 # Diagrams
 *.drawio
+
+# Misc folders and files
+__pycache__
+*.p # Pickle
+*.ps1 # PowerShell for distribution
+*.pdf
+
