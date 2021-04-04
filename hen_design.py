@@ -256,8 +256,8 @@ class HEN:
             self.first_utility = 0 * self.flow_unit*self.delta_temp_unit*self.cp_unit
             self.first_utility_loc = 0
             print('Warning: there is no pinch point nor a first utility\n')
-            if self.HEN_terminal is not None:
-                self.HEN_terminal.print2screen('Warning: there is no pinch point nor a first utility\n', False)
+            if self.GUI_terminal is not None:
+                self.GUI_terminal.print2screen('Warning: there is no pinch point nor a first utility\n', False)
         
         self.last_utility = q_sum[-1] * self.flow_unit*self.delta_temp_unit*self.cp_unit
         self.enthalpy_hot = np.insert(enthalpy_hot, 0, 0) # The first value in enthalpy_hot is defined as 0
@@ -768,8 +768,8 @@ class HEN:
         # Restricting the number of intervals based on the pinch point
         if pinch.casefold() in {'above', 'top', 'up'}:
             if self.first_utility_loc == 0:
-                if self.HEN_terminal is not None:
-                    self.HEN_terminal.print2screen('ERROR: This HEN doesn\'t have anything above the pinch', True)
+                if self.GUI_terminal is not None:
+                    self.GUI_terminal.print2screen('ERROR: This HEN doesn\'t have anything above the pinch', True)
                 raise ValueError('This HEN doesn\'t have anything above the pinch')
             else:
                 num_of_intervals = self.first_utility_loc + 1
@@ -799,8 +799,8 @@ class HEN:
             lower = np.zeros_like(forbidden, dtype = np.float64)
         elif isinstance(lower, (int, float)): # A single value was passed, representing a minimum threshold
             if np.sum(lower > upper):
-                if self.HEN_terminal is not None:
-                    self.HEN_terminal.print2screen(f'The lower threshold you passed is greater than the maximum heat of {np.sum(lower > upper)} streams\n', True)
+                if self.GUI_terminal is not None:
+                    self.GUI_terminal.print2screen(f'The lower threshold you passed is greater than the maximum heat of {np.sum(lower > upper)} streams\n', True)
                 raise ValueError(f'The lower threshold you passed is greater than the maximum heat of {np.sum(lower > upper)} streams')
             lower = np.ones_like(forbidden, dtype = np.float64) * lower
         elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
@@ -816,8 +816,8 @@ class HEN:
         results = self._place_exchangers(pinch, num_of_intervals, upper, lower, forbidden, required, U, U_unit, exchanger_type)
         t2 = time()
         print(f'The first solution took {t2-t1:.2f} seconds')
-        if HEN_terminal is not None:
-            self.HEN_terminal.print2screen(f'The first solution took {t2-t1:.2f} seconds\n', False)
+        if GUI_terminal is not None:
+            self.GUI_terminal.print2screen(f'The first solution took {t2-t1:.2f} seconds\n', False)
         # Storing the results in the HEN object
         if pinch == 'above':
             self.results_above = [results]
@@ -963,24 +963,24 @@ class HEN:
             delta_T1 = self.streams[stream1].current_t_above - s2_t_above
             delta_T2 = s1_t_above - self.streams[stream2].current_t_above
             if self.streams[stream1].current_t_above < s2_t_above:
-                if self.HEN_terminal is not None:
-                    self.HEN_terminal.print2screen(f'ERROR: Match is thermodynamically impossible, as the hot stream is entering with a temperature of {self.streams[stream1].current_t_above:.4g}, '
+                if self.GUI_terminal is not None:
+                    self.GUI_terminal.print2screen(f'ERROR: Match is thermodynamically impossible, as the hot stream is entering with a temperature of {self.streams[stream1].current_t_above:.4g}, '
                     f'while the cold stream is leaving with a temperature of {s2_t_above:.4g}\n', True)
                 raise ValueError(f'Match is thermodynamically impossible, as the hot stream is entering with a temperature of {self.streams[stream1].current_t_above:.4g}, '
                     f'while the cold stream is leaving with a temperature of {s2_t_above:.4g}')
             elif s1_t_above < self.streams[stream2].current_t_above:
-                if self.HEN_terminal is not None:
-                    self.HEN_terminal.print2screen(f'ERROR: Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_above:.4g}, '
+                if self.GUI_terminal is not None:
+                    self.GUI_terminal.print2screen(f'ERROR: Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_above:.4g}, '
                     f'while the cold stream is entering with a temperature of {self.streams[stream2].current_t_above:.4g}\n', True)
                 raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_above:.4g}, '
                     f'while the cold stream is entering with a temperature of {self.streams[stream2].current_t_above:.4g}')
             elif delta_T1 < self.delta_t:
-                if self.HEN_terminal is not None:
-                    self.HEN_terminal.print2screen(f'WARNING: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match\'s ΔT is {delta_T1:.4g}\n', False)
+                if self.GUI_terminal is not None:
+                    self.GUI_terminal.print2screen(f'WARNING: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match\'s ΔT is {delta_T1:.4g}\n', False)
                 warnings.warn(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T1:.4g}")
             elif delta_T2 < self.delta_t:
-                if self.HEN_terminal is not None:
-                    self.HEN_terminal.print2screen(f"WARNING: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T2:.4g}\n", False)
+                if self.GUI_terminal is not None:
+                    self.GUI_terminal.print2screen(f"WARNING: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T2:.4g}\n", False)
                 warnings.warn(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T2:.4g}")
             
             # Recording the data
@@ -1026,24 +1026,24 @@ class HEN:
             delta_T1 = self.streams[stream1].current_t_below - s2_t_below
             delta_T2 = s1_t_below - self.streams[stream2].current_t_below
             if self.streams[stream1].current_t_below < s2_t_below:
-                if self.HEN_terminal is not None:
-                    self.HEN_terminal.print2screen(f'Match is thermodynamically impossible, as the hot stream is entering with a temperature of {self.streams[stream1].current_t_below:.4g}, '
+                if self.GUI_terminal is not None:
+                    self.GUI_terminal.print2screen(f'Match is thermodynamically impossible, as the hot stream is entering with a temperature of {self.streams[stream1].current_t_below:.4g}, '
                     f'while the cold stream is leaving with a temperature of {s2_t_below:.4g}\n', True)
                 raise ValueError(f'Match is thermodynamically impossible, as the hot stream is entering with a temperature of {self.streams[stream1].current_t_below:.4g}, '
                     f'while the cold stream is leaving with a temperature of {s2_t_below:.4g}')
             elif s1_t_below < self.streams[stream2].current_t_below:
-                if self.HEN_terminal is not None:
-                    self.HEN_terminal.print2screen(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_below:.4g}, '
+                if self.GUI_terminal is not None:
+                    self.GUI_terminal.print2screen(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_below:.4g}, '
                     f'while the cold stream is entering with a temperature of {self.streams[stream2].current_t_below:.4g}\n', True)
                 raise ValueError(f'Match is thermodynamically impossible, as the hot stream is leaving with a temperature of {s1_t_below:.4g}, '
                     f'while the cold stream is entering with a temperature of {self.streams[stream2].current_t_below:.4g}')
             elif delta_T1 < self.delta_t:
-                if self.HEN_terminal is not None:
-                    self.HEN_terminal.print2screen(f"WARNING: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T1:.4g}\n", False)
+                if self.GUI_terminal is not None:
+                    self.GUI_terminal.print2screen(f"WARNING: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T1:.4g}\n", False)
                 print(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T1:.4g}")
             elif delta_T2 < self.delta_t:
-                if self.HEN_terminal is not None:
-                    self.HEN_terminal.print2screen(f"WARNING: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T2:.4g}\n", False)
+                if self.GUI_terminal is not None:
+                    self.GUI_terminal.print2screen(f"WARNING: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T2:.4g}\n", False)
                 print(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T2:.4g}")
             
             # Recording the data
