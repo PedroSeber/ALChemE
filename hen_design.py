@@ -1038,18 +1038,19 @@ class HEN:
             GUI_oe_tree.receive_new_exchanger(oeDataVector)
         
     def save(self, name, overwrite = False):
-        if "." in name:
-            file_name = name
-        else:
-            file_name = name + ".p"
+        # Ensuring the saved file has an extension
+        if '.' not in name:
+            name += '.p'
 
-        if not overwrite:
-            while os.path.exists(file_name):
-                word = file_name.split('.')
-                file_name = word[0] + "DUPLICATE." +  word[1]
-            print("The File Name you chose already exists in this directory. Saving as " + file_name + " instead")
+        # Manipulating the file name if overwrite is False
+        if not overwrite and os.path.exists(name):
+            while os.path.exists(name):
+                word = name.split('.')
+                name = word[0] + '_DUPLICATE.' +  word[1]
+            print(f'The file name you chose already exists in this directory. Saving as {name} instead')
 
-        pickle.dump(self, open( file_name, "wb" ))
+        with open(name, 'wb') as f:
+            pickle.dump(self, f)
         
     @classmethod
     def load(cls, file = None):
@@ -1061,7 +1062,7 @@ class HEN:
                     file_list.append(myfile)
             if len(file_list) != 1:
                 raise ValueError('You must supply a file name (with extension) to HEN.load()\n'+
-            'Alternatively, ensure there\'s only one .p file in the working directory')
+                                 'Alternatively, ensure there\'s only one .p file in the working directory')
             else:
                 file = file_list[0]
         return pickle.load(open(file, 'rb'))
