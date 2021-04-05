@@ -2,16 +2,18 @@
 .ipynb_checkpoints
 *.ipynb
 
-# PyInstaller folders
+# PyInstaller folders and distribution files
 build
 dist
+*.ps1
 
 # Diagrams
 *.drawio
 
 # Misc folders and files
 __pycache__
-*.p # Pickle
-*.ps1 # PowerShell for distribution
 *.pdf
+
+# Pickle files
+*.p
 
