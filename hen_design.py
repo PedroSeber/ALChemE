@@ -13,6 +13,7 @@ import pickle
 import warnings
 from gekko import GEKKO
 from time import time
+from itertools import product
 
 class HEN:
     """
@@ -806,7 +807,7 @@ class HEN:
         elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
             raise ValueError('Lower must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
         
-        # Updating the HEN_object variables (used in the get_more_sols area of this function )
+        # Updating the HEN_object variables (used in the get_more_sols area of this function)
         self.upper_limit = upper
         self.lower_limit = lower
         self.forbidden = forbidden
@@ -816,7 +817,7 @@ class HEN:
         results = self._place_exchangers(pinch, num_of_intervals, upper, lower, forbidden, required, U, U_unit, exchanger_type)
         t2 = time()
         print(f'The first solution took {t2-t1:.2f} seconds')
-        if GUI_terminal is not None:
+        if self.GUI_terminal is not None:
             self.GUI_terminal.print2screen(f'The first solution took {t2-t1:.2f} seconds\n', False)
         # Storing the results in the HEN object
         if pinch == 'above':
@@ -828,76 +829,140 @@ class HEN:
             return results
         
         ###### get_more_solutions area ######
-        iter_count = 1
-
+        # Setting up the individual locations
+        final_combinations = []
+        # Removing elements that are always forbidden, forbidden by the user, or required by the user, so we don't waste time combining them
+        for elem in product(range(self.forbidden.shape[0]), range(self.forbidden.shape[1]) ):
+            if pinch == 'above' and not (self.always_forbidden_above[elem] or self.required[elem] or self.forbidden[elem]):
+                final_combinations.append(elem)
+            elif pinch == 'below' and not (self.always_forbidden_below[elem] or self.required[elem] or self.forbidden[elem]):
+                final_combinations.append(elem)
+        
+        ##### Case depth == 1 #####
         if pinch == 'above':
-            total_count = self.results_above[0].loc['Q'].shape[0]*self.results_above[0].loc['Q'].shape[1] - np.sum(self.always_forbidden_above)
-            for rowidx in range(self.results_above[0].loc['Q'].shape[0]):
-                for colidx in range(self.results_above[0].loc['Q'].shape[1]):
-                    # Match will never occur, so don't bother calling place_exchangers()
-                    if self.always_forbidden_above[rowidx, colidx] or self.required[rowidx, colidx] or self.forbidden[rowidx, colidx]:
-                        continue
-                    # Original solution had a match here, so we'll try forbidding it
-                    elif self.results_above[0].loc['Q'].iat[rowidx, colidx] > 0:
-                        self.forbidden[rowidx, colidx] = True
-                    # Original solution didn't have a match here, so we'll try requiring it
-                    elif self.results_above[0].loc['Q'].iat[rowidx, colidx] == 0:
-                        self.required[rowidx, colidx] = True
+            for iter_count, elem in enumerate(final_combinations):
+                # Original solution had a match here, so we'll try forbidding it
+                if self.results_above[0].loc['Q'].iat[elem] > 0:
+                    self.forbidden[elem] = True
+                # Original solution didn't have a match here, so we'll try requiring it
+                elif self.results_above[0].loc['Q'].iat[elem] == 0:
+                    self.required[elem] = True
                     
-                    print(f'Iteration {iter_count} out of {total_count}')
-                    try:
-                        unique_sol = True
-                        results = self._place_exchangers(pinch, num_of_intervals, self.upper_limit, self.lower_limit, self.forbidden, self.required, U, U_unit, exchanger_type, called_by_GMS = True)
-                        for prev_sol in self.results_above:
-                            if np.allclose(prev_sol.loc['Q'], results.loc['Q'], 0, 1e-6): # Using a 1e-6 absolute tolerance to compare heats
-                                unique_sol = False
-                                continue
-                        if unique_sol:
-                            self.results_above.append(results)
-                            print(f'Found a unique solution during iteration {iter_count}. Solution has a cost of ${results.loc["cost"].sum().sum():,.2f}')
-                    except Exception:
-                        pass
-                    finally:
-                        # Restoring the forbidden / required matches to their original values
-                        if self.results_above[0].loc['Q'].iat[rowidx, colidx] > 0:
-                            self.forbidden[rowidx, colidx] = False
-                        elif self.results_above[0].loc['Q'].iat[rowidx, colidx] == 0:
-                            self.required[rowidx, colidx] = False
-                        iter_count += 1
+                print(f'Iteration {iter_count + 1} out of {len(final_combinations)}')
+                try:
+                    unique_sol = True
+                    results = self._place_exchangers(pinch, num_of_intervals, self.upper_limit, self.lower_limit, self.forbidden, self.required, U, U_unit, exchanger_type, called_by_GMS = True)
+                    for prev_sol in self.results_above:
+                        if np.allclose(prev_sol.loc['Q'], results.loc['Q'], 0, 1e-6): # Using a 1e-6 absolute tolerance to compare heats
+                            unique_sol = False
+                            continue # TODO: change to break
+                    if unique_sol:
+                        self.results_above.append(results)
+                        print(f'Found a unique solution during iteration {iter_count + 1}. Solution has a cost of ${results.loc["cost"].sum().sum():,.2f}')
+                except Exception:
+                    pass
+                finally:
+                    # Restoring the forbidden / required matches to their original values
+                    if self.results_above[0].loc['Q'].iat[elem] > 0:
+                        self.forbidden[elem] = False
+                    elif self.results_above[0].loc['Q'].iat[elem] == 0:
+                        self.required[elem] = False
         elif pinch == 'below':
-            total_count = self.results_below[0].loc['Q'].shape[0]*self.results_below[0].loc['Q'].shape[1] - np.sum(self.always_forbidden_below)
-            for rowidx in range(self.results_below[0].loc['Q'].shape[0]):
-                for colidx in range(self.results_below[0].loc['Q'].shape[1]):
-                    # Match will never occur or will always occur, so don't bother calling place_exchangers()
-                    if self.always_forbidden_below[rowidx, colidx] or self.required[rowidx, colidx] or self.forbidden[rowidx, colidx]:
-                        continue
-                    # Original solution had a match here, so we'll try forbidding it
-                    elif self.results_below[0].loc['Q'].iat[rowidx, colidx] > 0:
-                        self.forbidden[rowidx, colidx] = True
-                    # Original solution didn't have a match here, so we'll try requiring it
-                    elif self.results_below[0].loc['Q'].iat[rowidx, colidx] == 0:
-                        self.required[rowidx, colidx] = True
-                    
-                    print(f'Iteration {iter_count} out of {total_count}')
-                    try:
-                        unique_sol = True
-                        results = self._place_exchangers(pinch, num_of_intervals, self.upper_limit, self.lower_limit, self.forbidden, self.required, U, U_unit, exchanger_type, called_by_GMS = True)
-                        for prev_sol in self.results_below:
-                            if np.allclose(prev_sol.loc['Q'], results.loc['Q'], 0, 1e-6): # Using a 1e-6 absolute tolerance to compare heats
-                                unique_sol = False
-                                continue
-                        if unique_sol:
-                            self.results_below.append(results)
-                            print(f'Found a unique solution during iteration {iter_count}. Solution has a cost of ${results.loc["cost"].sum().sum():,.2f}')
-                    except Exception:
-                        pass
-                    finally:
-                        # Restoring the forbidden / required matches to their original values
-                        if self.results_below[0].loc['Q'].iat[rowidx, colidx] > 0:
-                            self.forbidden[rowidx, colidx] = False
+            for iter_count, elem in enumerate(final_combinations):
+                # Original solution had a match here, so we'll try forbidding it
+                if self.results_below[0].loc['Q'].iat[elem] > 0:
+                    self.forbidden[elem] = True
+                # Original solution didn't have a match here, so we'll try requiring it
+                elif self.results_below[0].loc['Q'].iat[elem] == 0:
+                    self.required[elem] = True
+                
+                print(f'Iteration {iter_count + 1} out of {len(final_combinations)}')
+                try:
+                    unique_sol = True
+                    results = self._place_exchangers(pinch, num_of_intervals, self.upper_limit, self.lower_limit, self.forbidden, self.required, U, U_unit, exchanger_type, called_by_GMS = True)
+                    for prev_sol in self.results_below:
+                        if np.allclose(prev_sol.loc['Q'], results.loc['Q'], 0, 1e-6): # Using a 1e-6 absolute tolerance to compare heats
+                            unique_sol = False
+                            continue
+                    if unique_sol:
+                        self.results_below.append(results)
+                        print(f'Found a unique solution during iteration {iter_count + 1}. Solution has a cost of ${results.loc["cost"].sum().sum():,.2f}')
+                except Exception:
+                    pass
+                finally:
+                    # Restoring the forbidden / required matches to their original values
+                    if self.results_below[0].loc['Q'].iat[elem] > 0:
+                        self.forbidden[elem] = False
+                    elif self.results_below[0].loc['Q'].iat[elem] == 0:
+                        self.required[elem] = False
+
+        ##### Cases depth > 1 #####
+        for cur_depth in range(2, depth):
+            iter_count = 1
+            depth_combinations = product(final_combinations, repeat = cur_depth)
+            if pinch == 'above':
+                for elem in depth_combinations:
+                        # Original solution had a match here, so we'll try forbidding it
+                        if self.results_above[0].loc['Q'].iat[rowidx, colidx] > 0:
+                            self.forbidden[rowidx, colidx] = True
+                        # Original solution didn't have a match here, so we'll try requiring it
+                        elif self.results_above[0].loc['Q'].iat[rowidx, colidx] == 0:
+                            self.required[rowidx, colidx] = True
+                        
+                        print(f'Iteration {iter_count} out of {len(depth_combinations)}')
+                        try:
+                            unique_sol = True
+                            results = self._place_exchangers(pinch, num_of_intervals, self.upper_limit, self.lower_limit, self.forbidden, self.required, U, U_unit, exchanger_type, called_by_GMS = True)
+                            for prev_sol in self.results_above:
+                                if np.allclose(prev_sol.loc['Q'], results.loc['Q'], 0, 1e-6): # Using a 1e-6 absolute tolerance to compare heats
+                                    unique_sol = False
+                                    continue
+                            if unique_sol:
+                                self.results_above.append(results)
+                                print(f'Found a unique solution during iteration {iter_count}. Solution has a cost of ${results.loc["cost"].sum().sum():,.2f}')
+                        except Exception:
+                            pass
+                        finally:
+                            # Restoring the forbidden / required matches to their original values
+                            if self.results_above[0].loc['Q'].iat[rowidx, colidx] > 0:
+                                self.forbidden[rowidx, colidx] = False
+                            elif self.results_above[0].loc['Q'].iat[rowidx, colidx] == 0:
+                                self.required[rowidx, colidx] = False
+                            iter_count += 1
+            elif pinch == 'below':
+                total_count = self.results_below[0].loc['Q'].shape[0]*self.results_below[0].loc['Q'].shape[1] - np.sum(self.always_forbidden_below)
+                for rowidx in range(self.results_below[0].loc['Q'].shape[0]):
+                    for colidx in range(self.results_below[0].loc['Q'].shape[1]):
+                        # Match will never occur or will always occur, so don't bother calling place_exchangers()
+                        if self.always_forbidden_below[rowidx, colidx] or self.required[rowidx, colidx] or self.forbidden[rowidx, colidx]:
+                            continue
+                        # Original solution had a match here, so we'll try forbidding it
+                        elif self.results_below[0].loc['Q'].iat[rowidx, colidx] > 0:
+                            self.forbidden[rowidx, colidx] = True
+                        # Original solution didn't have a match here, so we'll try requiring it
                         elif self.results_below[0].loc['Q'].iat[rowidx, colidx] == 0:
-                            self.required[rowidx, colidx] = False
-                        iter_count += 1
+                            self.required[rowidx, colidx] = True
+                        
+                        print(f'Iteration {iter_count} out of {total_count}')
+                        try:
+                            unique_sol = True
+                            results = self._place_exchangers(pinch, num_of_intervals, self.upper_limit, self.lower_limit, self.forbidden, self.required, U, U_unit, exchanger_type, called_by_GMS = True)
+                            for prev_sol in self.results_below:
+                                if np.allclose(prev_sol.loc['Q'], results.loc['Q'], 0, 1e-6): # Using a 1e-6 absolute tolerance to compare heats
+                                    unique_sol = False
+                                    continue
+                            if unique_sol:
+                                self.results_below.append(results)
+                                print(f'Found a unique solution during iteration {iter_count}. Solution has a cost of ${results.loc["cost"].sum().sum():,.2f}')
+                        except Exception:
+                            pass
+                        finally:
+                            # Restoring the forbidden / required matches to their original values
+                            if self.results_below[0].loc['Q'].iat[rowidx, colidx] > 0:
+                                self.forbidden[rowidx, colidx] = False
+                            elif self.results_below[0].loc['Q'].iat[rowidx, colidx] == 0:
+                                self.required[rowidx, colidx] = False
+                            iter_count += 1
 
     def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, exchanger_delta_t = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), 
         exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0, pressure_unit = unyt.Pa, GUI_oe_tree = None):
