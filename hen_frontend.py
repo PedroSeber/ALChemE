@@ -524,7 +524,7 @@ class HEN_GUI_objE_tree(ttk.Treeview):
                 tree.selection_set(item_name)
         
     def receive_new_stream(self, oeDataVector):            
-        self.insert(self.StreamNode, 'end', text=oeDataVector[0], values=('%.2G' % oeDataVector[1] + ' ' + str(oeDataVector[1].units), '%.2G'  % oeDataVector[2] + ' ' + str(oeDataVector[1].units), '%.2G' % oeDataVector[3] + ' ' + str(oeDataVector[3].units), '%5.2g' % oeDataVector[4] + ' ' + str(oeDataVector[4].units), 'Active'), tags='selectable')
+        self.insert(self.StreamNode, 'end', text=oeDataVector[0], values=(f'{oeDataVector[1].value:.6f}'.rstrip('0').rstrip('.') + ' ' + str(oeDataVector[1].units), f'{oeDataVector[2].value:.6f}'.rstrip('0').rstrip('.') + ' ' + str(oeDataVector[1].units), f'{oeDataVector[3].value:.6f}'.rstrip('0').rstrip('.') + ' ' + str(oeDataVector[3].units), f'{oeDataVector[4].value:5.6f}'.rstrip('0').rstrip('.') + ' ' + str(oeDataVector[4].units), 'Active'), tags='selectable')
         
     def receive_new_exchanger(self, oeDataVector):
         self.insert(self.HXNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), str(oeDataVector[2]), '%.2G'  % oeDataVector[3] + ' ' + str(oeDataVector[3].units), 'Active'), tags='selectable')
