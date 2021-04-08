@@ -10,6 +10,7 @@ from tkinter import ttk
 from hen_design import HEN
 from hen_design import generate_GUI_plot
 import subprocess
+import pdb
 
 ##############################################################################
 # CLASSES
@@ -145,11 +146,11 @@ class HEN_GUI_stream_input(ttk.Frame):
                         e.grid(row=row, column=col)
                         self.input_entries[str([row, col])] = e
                     elif col == 3:
-                        m = create_dropdown_menu(self, ['°C', '°F', '°K'])
+                        m = create_dropdown_menu(self, ['°C', '°F', 'K'])
                         m[0].grid(row = row, column=col, sticky='w')
                         self.input_entries[str([row, col])] = m[1]
                     elif col == 5:
-                        m = create_dropdown_menu(self, ['J/(kg·°C)', 'BTU/(lb·°F)', 'J/(kg·°K)'])
+                        m = create_dropdown_menu(self, ['J/(kg·°C)', 'BTU/(lb·°F)', 'J/(kg·K)'])
                         m[0].grid(row = row, column=col, sticky='w')
                         self.input_entries[str([row, col])] = m[1]
                     elif col == 7:
@@ -191,7 +192,7 @@ class HEN_GUI_stream_input(ttk.Frame):
                         l = ttk.Label(self, text='OR', font=('Helvetica', 10, 'bold'))
                         l.grid(row=row, column=col, sticky='w')
                     elif col == 5:
-                        m = create_dropdown_menu(self, ['°C', '°F', '°K'])
+                        m = create_dropdown_menu(self, ['°C', '°F', 'K'])
                         m[0].grid(row = row, column=col, sticky='w')
                         self.input_entries[str([row, col])] = m[1]
                     elif col == 10:
@@ -243,7 +244,7 @@ class HEN_GUI_stream_input(ttk.Frame):
                         m[0].grid(row = row, column=col)
                         self.input_entries[str([row, col])] = m[1]
                     elif col == 3:
-                        m = create_dropdown_menu(self, ['°C', '°F', '°K'])
+                        m = create_dropdown_menu(self, ['°C', '°F', 'K'])
                         m[0].grid(row = row, column=col, sticky='w')
                         self.input_entries[str([row, col])] = m[1]
                     elif col == 5:
@@ -290,7 +291,7 @@ class HEN_GUI_stream_input(ttk.Frame):
         elif raw_input[3] == '°F':
             self.temp_unit = unyt.degF
         else:
-            self.temp_unit = unyt.degK
+            self.temp_unit = unyt.K
             
         # Convert cp unit input to unyt input
         if raw_input[5] == 'J/(kg·°C)':
@@ -298,7 +299,7 @@ class HEN_GUI_stream_input(ttk.Frame):
         elif raw_input[5] == 'BTU/(lb·°F)':
             raw_input[5] = unyt.BTU/(unyt.delta_degF*unyt.lb)
         else:
-            raw_input[5] = unyt.J/(unyt.delta_degK*unyt.kg)
+            raw_input[5] = unyt.J/(unyt.K*unyt.kg)
         
         # Convert flow rate unit input to unyt input
         if raw_input[7] == 'kg/s':
@@ -369,7 +370,7 @@ class HEN_GUI_stream_input(ttk.Frame):
         elif raw_input[4] == '°F':
             raw_input[4] = unyt.degF
         else:
-            raw_input[4] = unyt.degK
+            raw_input[4] = unyt.K
         
         
         # Convert heat load units into unyt
@@ -426,8 +427,15 @@ class HEN_GUI_stream_input(ttk.Frame):
             rawdata = self.input_entries[str([11, col])].get()
             if rawdata == '': rawdata = None
             raw_input.append(rawdata)        
-        
-        self.HEN_object.add_utility(utility_type = raw_input[1], temperature = float(raw_input[2]), cost = float(raw_input[4]), utility_name = raw_input[0], temp_unit = unyt.degC, GUI_oe_tree = self.HEN_object_explorer.objectExplorer)#, cost_unit = raw_input[5])
+
+        if raw_input[3] == '°C':
+            raw_input[3] = unyt.degC
+        elif raw_input[3] == 'K':
+            raw_input[3] = unyt.K
+        elif raw_input[3] == '°F':
+            raw_input[3] = unyt.degF
+
+        self.HEN_object.add_utility(utility_type = raw_input[1], temperature = float(raw_input[2]), cost = float(raw_input[4]), utility_name = raw_input[0], temp_unit = raw_input[3], GUI_oe_tree = self.HEN_object_explorer.objectExplorer)#, cost_unit = raw_input[5])
         
         if errorFlag == False:
             for row in [0, 2, 4]:
@@ -524,19 +532,19 @@ class HEN_GUI_objE_tree(ttk.Treeview):
                 tree.selection_set(item_name)
         
     def receive_new_stream(self, oeDataVector):            
-        self.insert(self.StreamNode, 'end', text=oeDataVector[0], values=('%.2G' % oeDataVector[1] + ' ' + str(oeDataVector[1].units), '%.2G'  % oeDataVector[2] + ' ' + str(oeDataVector[1].units), '%.2G' % oeDataVector[3] + ' ' + str(oeDataVector[3].units), '%5.2g' % oeDataVector[4] + ' ' + str(oeDataVector[4].units), 'Active'), tags='selectable')
+        self.insert(self.StreamNode, 'end', text=oeDataVector[0], values=(f'{oeDataVector[1].value:.6f}'.rstrip('0').rstrip('.') + ' ' + str(oeDataVector[1].units), f'{oeDataVector[2].value:.6f}'.rstrip('0').rstrip('.') + ' ' + str(oeDataVector[1].units), f'{oeDataVector[3].value:.6f}'.rstrip('0').rstrip('.') + ' ' + str(oeDataVector[3].units), f'{oeDataVector[4].value:5.6f}'.rstrip('0').rstrip('.') + ' ' + str(oeDataVector[4].units), 'Active'), tags='selectable')
         
     def receive_new_exchanger(self, oeDataVector):
         self.insert(self.HXNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), str(oeDataVector[2]), '%.2G'  % oeDataVector[3] + ' ' + str(oeDataVector[3].units), 'Active'), tags='selectable')
     
     def receive_new_utility(self, oeDataVector):
-        self.insert(self.UtilityNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), '%.2G'  % oeDataVector[2] + ' ' + str(oeDataVector[2].units), '%.2G'  % oeDataVector[3] + ' $' + str(oeDataVector[3].units), str(oeDataVector[4]), 'Active'), tags='selectable')
+        self.insert(self.UtilityNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), f'{oeDataVector[2].value:.6f}'.rstrip('0').rstrip('.') + ' ' + str(oeDataVector[2].units), f'{oeDataVector[3].value:.2f}' + ' $ *' + str(oeDataVector[3].units) ), tags='selectable')
     
     def receive_new_upper_solution(self, oeDataVector):
-        self.insert(self.UpperSolutionNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), oeDataVector[2]), tags='selectable')
+        self.insert(self.UpperSolutionNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), f'{oeDataVector[2]:.2f}'), tags='selectable')
         
     def receive_new_lower_solution(self, oeDataVector):
-        self.insert(self.LowerSolutionNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), oeDataVector[2]), tags='selectable')
+        self.insert(self.LowerSolutionNode, 'end', text=oeDataVector[0], values=(str(oeDataVector[1]), f'{oeDataVector[2]:.2f}'), tags='selectable')
         
     def delete_item(self):
         HEN_selectedObject  = self.selection()[0]
@@ -629,18 +637,16 @@ class HEN_GUI_objE_display(tk.Text):
                 elem = self.HEN_object.results_above[int(object_name)-1]
                 qSol = str(elem.loc['Q'])
                 cSol = str(elem.loc['cost'])
-                displaytext = 'No. Exchanger: ' + str((elem.loc["Q"]>0).sum().sum()) + '\n' + 'Cost: $' + str(elem.loc["cost"].sum().sum()) + '\n' + \
-                    'Solution Match Matrix (Q)\n' + qSol + '\n' + 'Solution Match Matrix (Cost)\n' + cSol + '\nHeat Unit of Solution Networks:' + \
-                        str(self.HEN_object.heat_unit) + '\nCost Unit of Solution Networks: $'
+                displaytext = 'No. Exchangers: ' + str((elem.loc["Q"]>0).sum().sum()) + '\n' + f'Cost: ${elem.loc["cost"].sum().sum():.2f}\n' + \
+                    f'Solution Match Matrix (Q in {self.HEN_object.heat_unit})\n' + qSol + '\n' + 'Solution Match Matrix (Cost in $)\n' + cSol
             elif tag == 'lower solution':
                 commandtext = str('displaying below pinch solution ' + str(object_name) + '...\n')
                 self.insert('end', commandtext)
                 elem = self.HEN_object.results_below[int(object_name)-1]
                 qSol = str(elem.loc['Q'])
                 cSol = str(elem.loc['cost'])
-                displaytext = 'No. Exchanger: ' + str((elem.loc["Q"]>0).sum().sum()) + '\n' + 'Cost: $' + str(elem.loc["cost"].sum().sum()) + '\n' + \
-                    'Solution Match Matrix (Q)\n' + qSol + '\n' + 'Solution Match Matrix (Cost)\n' + cSol + '\nHeat Unit of Solution Networks:' + \
-                        str(self.HEN_object.heat_unit) + '\nCost Unit of Solution Networks: $'
+                displaytext = 'No. Exchangers: ' + str((elem.loc["Q"]>0).sum().sum()) + '\n' + f'Cost: ${elem.loc["cost"].sum().sum():.2f}\n' + \
+                    f'Solution Match Matrix (Q in {self.HEN_object.heat_unit})\n' + qSol + '\n' + 'Solution Match Matrix (Cost in $)\n' + cSol
             self.insert('end', displaytext + '\n\n')
             self.insert('end', '>>> ')
             self.see('end')
@@ -894,20 +900,15 @@ class HEN_GUI_optimization_controls(ttk.Frame):
                     cSol = str(elem.loc['cost'])
                     # Print to terminal/object visualizer
                     self.HEN_object_explorer.objectVisualizer.print2screen('-'*20, False)
-                    self.HEN_object_explorer.objectVisualizer.print2screen('Solution ' + str(solNum) + '\n', False)
-                    self.HEN_object_explorer.objectVisualizer.print2screen('No. Exchangers: ' + str((elem.loc["Q"]>0).sum().sum()) + '\n', False)
-                    self.HEN_object_explorer.objectVisualizer.print2screen('Cost: $' + str(elem.loc["cost"].sum().sum()) + '\n', False)
-                    self.HEN_object_explorer.objectVisualizer.print2screen('Solution Match Matrix (Q)\n', False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen(f'Solution {solNum}\n', False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen('No. Exchangers: ' + str((elem.loc["Q"]>0).sum().sum()), False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen(f'Cost: ${elem.loc["cost"].sum().sum():.2f}\n', False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen(f'Solution Match Matrix (Q in {self.HEN_object.heat_unit})', False)
                     self.HEN_object_explorer.objectVisualizer.print2screen(qSol + '\n', False)
-                    self.HEN_object_explorer.objectVisualizer.print2screen('Solution Match Matrix (Cost)\n', False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen('Solution Match Matrix (Cost in $)', False)
                     self.HEN_object_explorer.objectVisualizer.print2screen(cSol + '\n', False)
                     # Send to object explorer/object tree
                     self.HEN_object_explorer.objectExplorer.receive_new_upper_solution([solNum, (elem.loc["Q"]>0).sum().sum(), elem.loc["cost"].sum().sum()])
-                    # Check if last solution; if so, print ending information
-                    if solNum == len(self.HEN_object.results_above):
-                        self.HEN_object_explorer.objectVisualizer.print2screen('-'*20, False)
-                        self.HEN_object_explorer.objectVisualizer.print2screen('Heat Unit of Solution Networks: ' + str(self.HEN_object.heat_unit), False)
-                        self.HEN_object_explorer.objectVisualizer.print2screen('\nCost Unit of Solution Networks: $', True)
                     solNum += 1
             else:
                 self.HEN_object_explorer.objectExplorer.delete(*self.HEN_object_explorer.objectExplorer.get_children(4))
@@ -916,20 +917,15 @@ class HEN_GUI_optimization_controls(ttk.Frame):
                     cSol = str(elem.loc['cost'])
                     # Print to terminal/object visualizer
                     self.HEN_object_explorer.objectVisualizer.print2screen('-'*20, False)
-                    self.HEN_object_explorer.objectVisualizer.print2screen('Solution ' + str(solNum) + '\n', False)
-                    self.HEN_object_explorer.objectVisualizer.print2screen('No. Exchangers: ' + str((elem.loc["Q"]>0).sum().sum()) + '\n', False)
-                    self.HEN_object_explorer.objectVisualizer.print2screen('Cost: $' + str(elem.loc["cost"].sum().sum()) + '\n', False)
-                    self.HEN_object_explorer.objectVisualizer.print2screen('Solution Match Matrix (Q)\n', False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen(f'Solution {solNum}\n', False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen('No. Exchangers: ' + str((elem.loc["Q"]>0).sum().sum()), False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen(f'Cost: ${elem.loc["cost"].sum().sum():.2f}\n', False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen(f'Solution Match Matrix (Q in {self.HEN_object.heat_unit})', False)
                     self.HEN_object_explorer.objectVisualizer.print2screen(qSol + '\n', False)
-                    self.HEN_object_explorer.objectVisualizer.print2screen('Solution Match Matrix (Cost)\n', False)
+                    self.HEN_object_explorer.objectVisualizer.print2screen('Solution Match Matrix (Cost in $)', False)
                     self.HEN_object_explorer.objectVisualizer.print2screen(cSol + '\n', False)
                     # Send to object explorer/object tree
                     self.HEN_object_explorer.objectExplorer.receive_new_lower_solution([solNum, (elem.loc["Q"]>0).sum().sum(), elem.loc["cost"].sum().sum()])
-                    # Check if last solution; if so, print ending information
-                    if solNum == len(self.HEN_object.results_below):
-                        self.HEN_object_explorer.objectVisualizer.print2screen('-'*20, False)
-                        self.HEN_object_explorer.objectVisualizer.print2screen('Heat Unit of Solution Networks: ' + str(self.HEN_object.heat_unit), False)
-                        self.HEN_object_explorer.objectVisualizer.print2screen('\nCost Unit of Solution Networks: $', True)
                     solNum+=1
         else:
             self.HEN_object_explorer.objectVisualizer.print2screen(errorMessage, True)
