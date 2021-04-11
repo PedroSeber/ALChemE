@@ -4,6 +4,7 @@
 import tkinter as tk
 from tkinter import ttk
 import hen_frontend
+import unyt
 from PIL import ImageTk, Image
 import pathlib
 
@@ -72,9 +73,68 @@ class HEN_GUI_frame(ttk.Frame):
         newHEN_GUI.grid(row=3, column=0)
         
     def run_HEN_GUI(self):
-        HEN_GUI_window = tk.Toplevel(self.master)
-        HEN_GUI_window.title('ALChemE - HEN Optimization')
-        hen_frontend.HEN_GUI_app(HEN_GUI_window)
+        # Initialize HEN setup window
+        self.HEN_setup_window = tk.Toplevel(self.master)
+        self.HEN_setup_window.title('ALChemE - HEN Optimization Setup')
+        self.input_entries = {}
+        
+        # Initialize widgets
+        HEN_sw_label = tk.Label(self.HEN_setup_window, text = 'HEN Optimization Setup', font=('Helvetica', 10, 'bold', 'underline'))
+        HEN_sw_DeltT = tk.Label(self.HEN_setup_window, text ='ΔTₘ')
+        # HEN_sw_HeatU = tk.Label(self.HEN_setup_window, text ='Heat Units')
+        HEN_sw_DeltTE = tk.Entry(self.HEN_setup_window, width=12)
+        HEN_sw_DeltTE.insert('end', '10')
+        HEN_sw_DeltTU = create_dropdown_menu(self.HEN_setup_window, ['°C', '°F', 'K'])
+        # HEN_sw_HeatUE = create_dropdown_menu(self.HEN_setup_window, ['J', 'kJ'])
+        HEN_sw_Submit = tk.Button(self.HEN_setup_window, text='Submit', command=self.open_HEN_GUI)
+        
+        # Place widgets
+        HEN_sw_label.grid(row=0, column=0, columnspan=3, sticky='nsew')
+        HEN_sw_DeltT.grid(row=1, column=0, sticky='nsew', pady=5)
+        HEN_sw_DeltTE.grid(row=1, column=1, sticky='nsew', pady=5)
+        self.input_entries[str([1, 1])] = HEN_sw_DeltTE
+        HEN_sw_DeltTU[0].grid(row=1, column=2, sticky='w', pady=5)
+        self.input_entries[str([1, 2])] = HEN_sw_DeltTU[1]
+        # HEN_sw_HeatU.grid(row=2, column=0, sticky='nsew')
+        # HEN_sw_HeatUE[0].grid(row=2, column=1, sticky='nsew')
+        # self.input_entries[str([2, 1])] = HEN_sw_HeatUE[1]
+        HEN_sw_Submit.grid(row=3, column=0, columnspan=3)
+        
+    def open_HEN_GUI(self):
+        # Error Flag
+        errorFlag = False
+        
+        # Extract submission data
+        dataVec = [self.input_entries[str([1, 1])].get(), self.input_entries[str([1, 2])].get()]
+        
+        # Sanitize minimum temperature difference input
+        try:
+            numericdata = float(dataVec[0])
+            dataVec[0] = numericdata
+        except TypeError:
+            errorFlag = True
+            errorMessage = 'ERROR: Invalid ΔTₘ input type'
+        
+        # Sanitize ΔTₘ unit input
+        if dataVec[1] == '°C':
+            dataVec[1] = unyt.degC
+        elif dataVec[1] == '°F':
+            dataVec[1] = unyt.degF
+        else:
+            dataVec[1] = unyt.K
+        
+        # Sanitize heat unit input
+        # if dataVec[2] == 'J':
+        #     dataVec[2] = unyt.J
+        # else:
+        #     dataVec[2] = unyt.kJ
+        
+        # Run HEN optimization program
+        if errorFlag == False:
+            self.HEN_setup_window.destroy()
+            HEN_GUI_window = tk.Toplevel(self.master)
+            HEN_GUI_window.title('ALChemE - HEN Optimization')
+            hen_frontend.HEN_GUI_app(HEN_GUI_window, deltaTmin=dataVec[0], tempUnit=dataVec[1])
 
 class WReN_GUI_frame(ttk.Frame):
     '''
@@ -102,6 +162,15 @@ class WReN_GUI_frame(ttk.Frame):
         #WReN_GUI_window = tk.Toplevel(self.master)
         #WReN_GUI_window.title('ALChemE - WReN Optimization')
         #frontend.WReN_GUI_app(HEN_GUI_window)
+
+##############################################################################
+# FUNCTIONS
+##############################################################################
+def create_dropdown_menu(master, options):
+    var = tk.StringVar(master)
+    menu = ttk.OptionMenu(master, var, options[0], *options)
+    return [menu, var]
+
 ##############################################################################
 # RUN APPLICATION
 ##############################################################################
