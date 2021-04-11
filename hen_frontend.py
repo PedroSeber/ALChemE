@@ -19,7 +19,7 @@ class HEN_GUI_app():
     '''
     A class which holds the HEN_GUI application. Slave of root window.
     '''
-    def __init__(self, master):
+    def __init__(self, master, deltaTmin=None, tempUnit=None):
         
         # Defining variables
         self.master = master
@@ -45,7 +45,7 @@ class HEN_GUI_app():
         self.tabControl.pack(expand=1, fill='both')
         
         # Initialize HEN object
-        self.HEN_object = HEN()
+        self.HEN_object = HEN(delta_t=deltaTmin, temp_unit=tempUnit)
         
         # Initialize control panel elements
         self.HEN_GUI_object_explorer = HEN_GUI_object_explorer(control_panel_Tab, self.HEN_object)
