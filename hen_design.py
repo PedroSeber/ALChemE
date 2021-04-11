@@ -683,7 +683,7 @@ class HEN:
 
         # Saving the results to variables (for ease of access)
         results = m.load_results()
-        Q_tot_results = np.zeros_like(Q_exc_tot, dtype = np.float)
+        Q_tot_results = np.zeros_like(Q_exc_tot, dtype = np.float64)
         costs = np.zeros_like(Q_tot_results)
         # Generating names to be used in a Pandas DataFrame with the results
         row_names = self.hot_utilities.index.append(self.streams.index[self.hot_streams&self.active_streams])
@@ -864,7 +864,6 @@ class HEN:
             Parallel(n_jobs = -1, require = 'sharedmem')(delayed(self._get_more_sols)(
                 pinch, upper, lower, forbidden, required, U, U_unit, exchanger_type, num_of_intervals, total_iterations, iter_count, elem) for iter_count, elem in enumerate(depth_combinations))
             
-
     def _get_more_sols_depth_one(self, pinch, upper, lower, forbidden, required, U, U_unit, exchanger_type, num_of_intervals, total_iterations, iter_count, elem):
         """
         Auxiliary function of solve_HEN().
@@ -1161,24 +1160,27 @@ class HEN:
             pickle.dump(self, f)
         
     @classmethod
-    def load(cls, file = None):
-        if file == None:
+    def load(cls, name = None):
+        # Automatically finding a .p file. Works if there is only one .p file in the working directory
+        if name is None:
             files = os.listdir()
             file_list = []
-            for myfile in files:
+            for myfile in name:
                 if myfile.endswith('.p'):
                     file_list.append(myfile)
             if len(file_list) != 1:
                 raise ValueError('You must supply a file name (with extension) to HEN.load()\n'+
                                  'Alternatively, ensure there\'s only one .p file in the working directory')
             else:
-                file = file_list[0]
-        return pickle.load(open(file, 'rb'))
+                name = file_list[0]
+        
+        with open(name, 'rb') as f:
+            return pickle.load(f)
     
     def _get_maximum_heats(self, upper, pinch, num_of_intervals):
         """
         Auxiliary function to calculate the maximum heat transferable between two streams.
-        Shouldn't be called by the user; rather, it is automatically called by _place_exchangers().
+        Shouldn't be called by the user; rather, it is automatically called by solve_HEN().
         """
         for rowidx in range(upper.shape[0]):
             for colidx in range(upper.shape[1]):
