@@ -887,13 +887,15 @@ class HEN:
             try:
                 unique_sol = True
                 results = self._place_exchangers(pinch, num_of_intervals, upper, lower, local_forbidden, local_required, U, U_unit, exchanger_type, called_by_GMS = True)
-                for prev_sol in self.results_above:
-                    if np.allclose(prev_sol.loc['Q'], results.loc['Q'], 0, 1e-6): # Using a 1e-6 absolute tolerance to compare heats
-                        unique_sol = False
-                        break
-                if unique_sol:
-                    self.results_above.append(results)
-                    print(f'Found a unique solution during iteration {iter_count + 1}. Solution has a cost of ${results.loc["cost"].sum().sum():,.2f}')
+                # Some solutions return wrong Q for the hot streams. This if-statement prevents them from being recorded
+                if np.allclose(results.loc['Q'].iloc[1:].sum(axis=1), np.sum(self._interval_heats[:sum(self.hot_streams), -num_of_intervals:], axis = 1), 0, 1e-6):
+                    for prev_sol in self.results_above:
+                        if np.allclose(prev_sol.loc['Q'], results.loc['Q'], 0, 1e-6): # Using a 1e-6 absolute tolerance to compare heats
+                            unique_sol = False
+                            break
+                    if unique_sol:
+                        self.results_above.append(results)
+                        print(f'Found a unique solution during iteration {iter_count + 1}. Solution has a cost of ${results.loc["cost"].sum().sum():,.2f}')
             except Exception:
                 self._failed_depth_one.add(elem)
 
