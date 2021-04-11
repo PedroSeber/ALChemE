@@ -21,11 +21,12 @@ class WReN:
     """
     A class that holds processes, used to solve WReN problems
     """
-    def __init__(self, conc_unit = unyt.mg/unyt.kg, flow_unit = unyt.kg/unyt.s):
+    def __init__(self, conc_unit = unyt.mg/unyt.kg, flow_unit = unyt.kg/unyt.s, GUI_terminal = None):
         self.conc_unit = conc_unit
         self.flow_unit = flow_unit
         self.processes = pd.Series()
         self.active_processes = np.array([], dtype = np.bool)
+        self.GUI_terminal = GUI_terminal
     
     def add_process(self, sink_conc, source_conc, sink_flow, source_flow = None, process_name = None, conc_unit = None, flow_unit = None, conc_names = None, GUI_oe_tree = None):
         # Converting to default units (as declared via the WReN class)        
@@ -80,6 +81,7 @@ class WReN:
         self.active_processes = np.append(self.active_processes, True)
 
         if GUI_oe_tree is not None:
+            # CHANGE ME
             temp_diff = t2 - t1
             temp_diff = temp_diff.tolist() * self.delta_temp_unit
             oeDataVector = [stream_name, t1, t2, cp*flow_rate, cp*flow_rate*temp_diff]
@@ -131,145 +133,6 @@ class WReN:
             del self.processes[obj_to_del]
         else:
             raise ValueError(f'{obj_to_del} not found in the processes')
-
-    def get_parameters(self):
-        """
-        This function obtains parameters (enthalpies, pinch temperature, heats above / below pinch) for the streams associated with this HEN object.
-        """
-
-        # Starting array from class data
-        temperatures = np.empty( (len(self.streams), 2) )
-        cp_vals = np.empty( (len(self.streams), 1) )
-
-        for idx, values in enumerate(self.streams.items()): # values[0] has the stream names, values[1] has the properties
-            temperatures[idx, 0], temperatures[idx, 1] = values[1].t1, values[1].t2
-            cp_vals[idx, 0] = values[1].cp * values[1].flow_rate
-        
-        self.hot_streams = temperatures[:, 0] > temperatures[:, 1]
-        plotted_ylines = np.concatenate((temperatures[self.hot_streams&self.active_streams, :].flatten(), temperatures[~self.hot_streams&self.active_streams, :].flatten() + self.delta_t.value))
-        self._plotted_ylines = np.sort(np.unique(plotted_ylines))
-
-        # Getting the heat and enthalpies at each interval
-        tmp1 = np.atleast_2d(np.max(temperatures[self.hot_streams&self.active_streams, :], axis = 1)).T >= np.atleast_2d(self._plotted_ylines[1:])
-        tmp2 = np.atleast_2d(np.min(temperatures[self.hot_streams&self.active_streams, :], axis = 1)).T <= np.atleast_2d(self._plotted_ylines[:-1])
-        streams_in_interval1 = (tmp1 & tmp2).astype(np.int8) # Numpy treats this as boolean if I don't convert the type
-        tmp1 = np.atleast_2d(np.max(temperatures[~self.hot_streams&self.active_streams, :], axis = 1)).T >= np.atleast_2d(self._plotted_ylines[1:] - self.delta_t.value)
-        tmp2 = np.atleast_2d(np.min(temperatures[~self.hot_streams&self.active_streams, :], axis = 1)).T <= np.atleast_2d(self._plotted_ylines[:-1] - self.delta_t.value)
-        streams_in_interval2 = (tmp1 & tmp2).astype(np.int8)
-        delta_plotted_ylines = self._plotted_ylines[1:] - self._plotted_ylines[:-1]
-        enthalpy_hot = np.sum(streams_in_interval1 * cp_vals[self.hot_streams&self.active_streams] * delta_plotted_ylines, axis = 0) # sum(FCp_hot) * ΔT
-        enthalpy_cold = np.sum(streams_in_interval2 * cp_vals[~self.hot_streams&self.active_streams] * delta_plotted_ylines, axis = 0) # sum(FCp_cold) * ΔT
-        q_interval = enthalpy_hot - enthalpy_cold # sum(FCp_hot - FCp_cold) * ΔT_interval
-        
-        
-        q_interval = q_interval[::-1] # Flipping the heat array so it starts from the top
-        q_sum = np.cumsum(q_interval)
-
-        if np.min(q_sum) <= 0:
-            first_utility = np.min(q_sum) # First utility is added to the minimum sum of heats, even if it isn't the first negative val
-            self.first_utility_loc = np.where(q_sum == first_utility)[0][0] # np.where returns a tuple that contains an array containing the location
-            self.first_utility = -first_utility * self.flow_unit*self.delta_temp_unit*self.cp_unit # It's a heat going in, so we want it to be positive
-            q_sum[self.first_utility_loc:] = q_sum[self.first_utility_loc:] + self.first_utility.value
-            print('The first utility is %g %s, located after interval %d\n' % (self.first_utility, self.first_utility.units, self.first_utility_loc+1))
-        else: # No pinch point
-            self.first_utility = 0 * self.flow_unit*self.delta_temp_unit*self.cp_unit
-            self.first_utility_loc = 0
-            print('Warning: there is no pinch point nor a first utility\n')
-        
-        self.last_utility = q_sum[-1] * self.flow_unit*self.delta_temp_unit*self.cp_unit
-        self.enthalpy_hot = np.insert(enthalpy_hot, 0, 0) # The first value in enthalpy_hot is defined as 0
-        # Shifting the cold enthalpy so that the first value starts at positive last_utility
-        self.enthalpy_cold = np.insert(enthalpy_cold, 0, self.last_utility)
-        print('The last utility is %g %s\n' % (self.last_utility, self.last_utility.units))
-
-        # Getting heats above / below pinch for each stream
-        streams_in_interval = np.zeros((len(self.streams), len(delta_plotted_ylines)), dtype = np.int8)
-        streams_in_interval[self.hot_streams&self.active_streams, :] = streams_in_interval1
-        streams_in_interval[~self.hot_streams&self.active_streams, :] = streams_in_interval2
-        self._interval_heats = streams_in_interval * cp_vals * delta_plotted_ylines
-        if self.first_utility_loc:
-            q_above = np.sum(self._interval_heats[:, -1-self.first_utility_loc:], axis = 1)
-            q_below = np.sum(self._interval_heats[:, :-1-self.first_utility_loc], axis = 1)
-        else:
-            q_below = np.sum(self._interval_heats, axis = 1)
-            q_above = np.zeros_like(q_below)
-        for idx, elem in enumerate(self.streams):
-            elem.q_above = q_above[idx] * self.first_utility.units
-            elem.q_above_remaining = q_above[idx] * self.first_utility.units
-            elem.q_below = q_below[idx] * self.first_utility.units
-            elem.q_below_remaining = q_below[idx] * self.first_utility.units
-            if elem.current_t_above is None:
-                if self.first_utility_loc > 0: # Arrays begin at 0 but end at -1, so a pinch point at the highest interval causes issues
-                    elem.current_t_above = self._plotted_ylines[-self.first_utility_loc - 2] * self.temp_unit - self.delta_t # Shifting the cold temperature by delta T
-                else:
-                    elem.current_t_above = self._plotted_ylines[-1] * self.temp_unit - self.delta_t # Shifting the cold temperature by delta T
-            elif elem.current_t_below is None:
-                if self.first_utility_loc > 0:
-                    elem.current_t_below = self._plotted_ylines[-self.first_utility_loc - 2] * self.temp_unit
-                else:
-                    elem.current_t_below = self._plotted_ylines[-1] * self.temp_unit
-        #self._interval_heats = self._interval_heats[self.active_streams, :] # Removing inactive streams; convenient for place_exchangers()
-        
-        # Heat limits used in the frontend version of place_exchangers()
-        self.upper_limit = np.zeros((np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities)), dtype = np.object)
-        self.lower_limit = np.zeros_like(self.upper_limit)
-        self.forbidden = np.zeros_like(self.upper_limit, dtype = np.bool)
-        self.required = np.zeros_like(self.forbidden)
-
-    def make_cc(self, tab_control = None):
-        plt.rcParams['axes.titlesize'] = 5
-        plt.rcParams['axes.labelsize'] = 5
-        plt.rcParams['font.size'] = 3
-
-        fig2, ax2 = plt.subplots(dpi = 350)
-        ax2.set_title('Composite Curve')
-        ax2.set_ylabel(f'Temperature ({self.temp_unit})')
-        ax2.set_xlabel(f'Enthalpy ({self.first_utility.units})')
-        # Note: There may be issues if all streams on one side fully skip one or more intervals. Not sure how to test this properly.
-        hot_index = np.concatenate(([True], np.sum(self._interval_heats[self.hot_streams&self.active_streams], axis = 0, dtype = np.bool))) # First value in the hot scale is defined as 0, so it's always True
-        cold_index = np.concatenate(([True], np.sum(self._interval_heats[~self.hot_streams&self.active_streams], axis = 0, dtype = np.bool))) # First value in the cold scale is defined as the cold utility, so it's always True
-        # Hot line
-        ax2.plot(np.cumsum(self.enthalpy_hot[hot_index][1:]), self._plotted_ylines[hot_index][1:], '-or', linewidth = 0.25, ms = 1.5)
-        # Cold line
-        ax2.plot(np.cumsum(self.enthalpy_cold[cold_index][:-1]), self._plotted_ylines[cold_index][:-1] - self.delta_t.value, '-ob', linewidth = 0.25, ms = 1.5)
-        ax2.set_ylim(ax2.get_ylim()[0], ax2.get_ylim()[1] * 1.05) # Making the y-axis a little longer to avoid CC's overlapping with text
-
-        # Arrow markers at the end of each line, rotated to follow the line
-        ylim = ax2.get_ylim()
-        xlim = ax2.get_xlim()
-        # Hot arrow
-        dx = self.enthalpy_hot[hot_index][0]-self.enthalpy_hot[hot_index][1]
-        dy = self._plotted_ylines[hot_index][0]-self._plotted_ylines[hot_index][1]
-        ax2.arrow(self.enthalpy_hot[hot_index][1], self._plotted_ylines[hot_index][1], dx, dy, color = 'r', length_includes_head = True, 
-            linewidth = 0.25, head_width = (ylim[1]-ylim[0])*0.02, head_length = (xlim[1]-xlim[0])*0.01)
-        # Cold arrow
-        dx = np.cumsum(self.enthalpy_cold[cold_index])[-1] - np.cumsum(self.enthalpy_cold[cold_index])[-2]
-        dy = self._plotted_ylines[cold_index][-1]-self._plotted_ylines[cold_index][-2]
-        ax2.arrow(np.cumsum(self.enthalpy_cold[cold_index])[-2], self._plotted_ylines[cold_index][-2]-self.delta_t.value, dx, dy, color = 'b', length_includes_head = True,
-            linewidth = 0.25, head_width = (ylim[1]-ylim[0])*0.02, head_length = (xlim[1]-xlim[0])*0.01)
-
-        # Text showing the utilities and overlap
-        top_text_loc = ax2.get_ylim()[1] - 0.03*(ax2.get_ylim()[1] - ax2.get_ylim()[0])
-        cold_text_loc = ax2.get_xlim()[0] + 0.03*(ax2.get_xlim()[1] - ax2.get_xlim()[0])
-        cold_text = 'Minimum Cold utility:\n%4g %s' % (self.last_utility, self.last_utility.units)
-        ax2.text(cold_text_loc, top_text_loc, cold_text, ha = 'left', va = 'top')
-        hot_text_loc = ax2.get_xlim()[1] - 0.03*(ax2.get_xlim()[1] - ax2.get_xlim()[0])
-        hot_text = 'Minimum Hot utility:\n%4g %s' % (self.first_utility, self.first_utility.units)
-        ax2.text(hot_text_loc, top_text_loc, hot_text, ha = 'right', va = 'top')
-        overlap_text_loc = np.mean(ax2.get_xlim())
-        overlap = np.minimum(np.cumsum(self.enthalpy_hot)[-1], np.cumsum(self.enthalpy_cold)[-1]) - np.maximum(self.enthalpy_hot[0], self.enthalpy_cold[0])
-        overlap_text = 'Maximum Heat recovery:\n%4g %s' % (overlap, self.first_utility.units)
-        ax2.text(overlap_text_loc, top_text_loc, overlap_text, ha = 'center', va = 'top')
-
-        plt.show(block = False)
-        if tab_control: # Embed into GUI
-            generate_GUI_plot(fig2, tab_control, 'Composite Curve')
-
-        """ TODO: remove whitespace around the graphs
-        ax = gca;
-        ti = ax.TightInset;
-        ax.Position = [ti(1), ti(2), 1 - ti(1) - ti(3), 1 - ti(2) - ti(4)]; % Removing whitespace from the graph
-        """
 
     def solve_WReN(self, costs, upper = None, lower = None, forbidden = None, required = None):
         """
@@ -354,14 +217,14 @@ class WReN:
         m.options.csv_write = 2
         m.options.web = 0
         m.solver_options = [# nlp sub-problem max iterations
-                            'nlp_maximum_iterations 10000', \
+                            'nlp_maximum_iterations 1000', \
                             # 1 = depth first, 2 = breadth first
                             'minlp_branch_method 1', \
                             # maximum deviation from whole number
                             'minlp_integer_tol 0.0001', \
                             # covergence tolerance
                             'minlp_gap_tol 0.001']
-        m.solve(disp = True)
+        m.solve(disp = False)
 
         # Saving the results to variables (for ease of access)
         results = m.load_results()
@@ -466,54 +329,3 @@ class Process():
         text =(f'A process with sink concentration = {print_sink_conc} and source concentration = {print_source_conc}\n'
              f'sink flow = {self.sink_flow} and source flow = {self.source_flow}\n')
         return text
-
-class HeatExchanger():
-    def __init__(self, stream1, stream2, heat, pinch, U, delta_T_lm, exchanger_type, cost_a, cost_b, pressure, name):
-        self.stream1 = stream1
-        self.stream2 = stream2
-        self.heat = heat
-        self.pinch = pinch
-        self.U = U
-        self.delta_T_lm = delta_T_lm
-        self.area = self.heat / (self.U * self.delta_T_lm)
-        self.exchanger_type = exchanger_type
-        self.pressure = pressure
-        self.name = name # Used in the self.delete() function
-
-        # Calculating costs
-        Ac = self.area.to('ft**2').value
-        pressure_c = self.pressure.to('psi').value
-        if exchanger_type == 'Floating Head':
-            self.cost_base = np.exp(12.0310) * Ac**(-0.8709) * np.exp(0.09005*np.log(Ac)**2)
-        elif exchanger_type == 'Fixed Head':
-            self.cost_base = np.exp(11.4185) * Ac**(-0.9228) * np.exp(0.09861*np.log(Ac)**2)
-        elif exchanger_type == 'U-Tube':
-            self.cost_base = np.exp(11.5510) * Ac**(-0.9186) * np.exp(0.09790*np.log(Ac)**2)
-        elif exchanger_type == 'Kettle Vaporizer':
-            self.cost_base = np.exp(12.3310) * Ac**(-0.8709) * np.exp(0.09005*np.log(Ac)**2)
-        Fm = cost_a + (Ac/100)**cost_b
-        if pressure_c > 100:
-            Fp = 0.9803 + 0.018*pressure_c/100 + 0.0017*(pressure_c/100)**2
-        else:
-            Fp = 1
-        self.cost_fob = self.cost_base * Fm * Fp
-
-    def __repr__(self):
-        text = (f'A {self.exchanger_type} heat exchanger exchanging {self.heat:.6g} between {self.stream1} and {self.stream2} {self.pinch} the pinch\n'
-            f'Has a U = {self.U:.4g}, area = {self.area:.4g}, and ΔT_lm = {self.delta_T_lm:.4g}\n'
-            f'Has a base cost of ${self.cost_base:,.2f} and a free on board cost of ${self.cost_fob:,.2f}\n')
-        return text
-
-
-# UTILITY FUNCTIONS
-def generate_GUI_plot(plot, tabControl, tab_name):
-    """
-    A function which generates a relevant model plot onto the GUI
-    """
-    new_tab = ttk.Frame(tabControl)
-    tabControl.add(new_tab, text=tab_name)
-    tabControl.pack(expand=1, fill='both')
-    new_canvas = FigureCanvasTkAgg(plot, master=new_tab)
-    new_canvas.draw()
-
-    new_canvas.get_tk_widget().pack()
