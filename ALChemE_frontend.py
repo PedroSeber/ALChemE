@@ -4,6 +4,7 @@
 import tkinter as tk
 from tkinter import ttk
 import hen_frontend
+import wren_frontend
 import unyt
 from PIL import ImageTk, Image
 import pathlib
@@ -147,7 +148,7 @@ class WReN_GUI_frame(ttk.Frame):
         WReN_GUILabel = ttk.Label(self, text='WReN Optimization', font=('Helvetica', 14, 'bold', 'underline'))
         WReN_GUIDescrip = tk.Text(self, bg='#F0F0F0', height=2, width=50, highlightthickness=0, borderwidth=0, font=('Helvetica'))
         descrip = """A program for visualizing and solving water recovery network \nproblems using optimization."""
-        newWReN_GUI = ttk.Button(self, text='New Project')
+        newWReN_GUI = ttk.Button(self, text='New Project', command=self.run_WReN_GUI)
         WReN_GUIDescrip.tag_configure('center', justify='center')
         WReN_GUIDescrip.insert('1.0', descrip)
         WReN_GUIDescrip.tag_add('center','1.0','end')
@@ -158,10 +159,10 @@ class WReN_GUI_frame(ttk.Frame):
         WReN_GUIDescrip.grid(row=1, column=0)
         newWReN_GUI.grid(row=2, column=0)
         
-    #def run_WReN_GUI(self):
-        #WReN_GUI_window = tk.Toplevel(self.master)
-        #WReN_GUI_window.title('ALChemE - WReN Optimization')
-        #frontend.WReN_GUI_app(HEN_GUI_window)
+    def run_WReN_GUI(self):
+        WReN_GUI_window = tk.Toplevel(self.master)
+        WReN_GUI_window.title('ALChemE - WReN Optimization')
+        wren_frontend.WReN_GUI_app(WReN_GUI_window)
 
 ##############################################################################
 # FUNCTIONS
