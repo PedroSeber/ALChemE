@@ -7,6 +7,7 @@ import hen_frontend
 import unyt
 from PIL import ImageTk, Image
 import pathlib
+import platform
 
 ##############################################################################
 # CLASSES
@@ -28,7 +29,10 @@ class ALChemE_app(tk.Frame):
         self.master.geometry(str(swidth)+'x'+str(sheight))
 
         # Set logo
-        logo = Image.open(str(pathlib.Path(__file__).parent.absolute()) + '\\ALChemE_logo.png')
+        if platform.system() == 'Windows':
+            logo = Image.open(str(pathlib.Path(__file__).parent.absolute()) + '\\ALChemE_logo.png')
+        else:
+            logo = Image.open(str(pathlib.Path(__file__).parent.absolute()) + '/ALChemE_logo.png')
         pixels_x, pixels_y = tuple([int(0.25 * x)  for x in logo.size])
         logoRender = ImageTk.PhotoImage(logo.resize((pixels_x, pixels_y)))        
         logoPanel = tk.Label(self.master, image=logoRender)
@@ -60,7 +64,10 @@ class HEN_GUI_frame(ttk.Frame):
         HEN_GUIDescrip.config(state='disabled')
         
         # Set display picture
-        self.henPic = Image.open(str(pathlib.Path(__file__).parent.absolute()) + '\\hen_logo.png')
+        if platform.system() == 'Windows':
+            self.henPic = Image.open(str(pathlib.Path(__file__).parent.absolute()) + '\\hen_logo.png')
+        else:
+            self.henPic = Image.open(str(pathlib.Path(__file__).parent.absolute()) + '/hen_logo.png')
         pixels_x, pixels_y = tuple([int(0.1 * x)  for x in self.henPic.size])
         self.henRender = ImageTk.PhotoImage(self.henPic.resize((pixels_x, pixels_y)))
         self.henPanel = tk.Label(self, image=self.henRender)
