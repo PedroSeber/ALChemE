@@ -15,7 +15,6 @@ setup(
         'matplotlib',
         'unyt',
         'gekko',
-        'tkinter',
         'joblib'
     ],
     )
