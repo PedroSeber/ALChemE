@@ -807,11 +807,11 @@ class HEN:
         # Setting the upper heat exchanged limit for each pair of streams
         if upper is None: # Automatically set the upper limits
             upper = np.zeros_like(forbidden, dtype = np.float64)
-            upper = self._get_maximum_heats(upper, pinch, num_of_intervals)
+            upper = self._get_maximum_heats(upper, pinch)
         elif isinstance(upper, (int, float)): # A single value was passed, representing a maximum threshold
             temp_upper = upper
             upper = np.zeros_like(forbidden, dtype = np.float64)
-            upper = self._get_maximum_heats(upper, pinch, num_of_intervals)
+            upper = self._get_maximum_heats(upper, pinch)
             upper[upper > temp_upper] = temp_upper # Setting the given upper limit only for streams that naturally had a higher limit
         elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
             raise ValueError('Upper must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
@@ -1192,11 +1192,26 @@ class HEN:
         with open(name, 'rb') as f:
             return pickle.load(f)
     
-    def _get_maximum_heats(self, upper, pinch, num_of_intervals):
+    def _get_maximum_heats(self, upper, pinch):
         """
         Auxiliary function to calculate the maximum heat transferable between two streams.
         Shouldn't be called by the user; rather, it is automatically called by solve_HEN().
         """
+        # num_of_intervals setup
+        if pinch.casefold() == 'above':
+            if self.first_utility_loc == 0:
+                if self.GUI_terminal is not None:
+                    self.GUI_terminal.print2screen('ERROR: This HEN doesn\'t have anything above the pinch', True)
+                raise ValueError('This HEN doesn\'t have anything above the pinch')
+            else:
+                num_of_intervals = self.first_utility_loc + 1
+        elif pinch.casefold() == 'below':
+            if self.first_utility_loc == 0: # No pinch point --> take all intervals
+                num_of_intervals = self._interval_heats[self.active_streams].shape[-1]
+            else:
+                num_of_intervals = self._interval_heats[self.active_streams, :-self.first_utility_loc-1].shape[-1]
+        
+        # Getting the maximum heats
         for rowidx in range(upper.shape[0]):
             for colidx in range(upper.shape[1]):
                 if rowidx < len(self.hot_utilities) and pinch == 'below': # No hot utilities are used below pinch
