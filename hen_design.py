@@ -342,7 +342,7 @@ class HEN:
         fig1, ax1 = plt.subplots(dpi = 350)
         ax1.set_title('Temperature Interval Diagram')
         ax1.set_xlim(0, 1)
-        ax1.set_ylim(-0.5 - 0.5*(len(self._plotted_ylines)//10), len(self._plotted_ylines) - 0.5 + 0.5*(len(self._plotted_ylines)//10)) #len()//10 is a correction for HEN with many temperature intervals
+        ax1.set_ylim(-0.5 - 0.5*(len(self._plotted_ylines)//10), len(self._plotted_ylines) - 0.5 + 0.5*(len(self._plotted_ylines)//10)) # len()//10 is a correction for HEN with many temperature intervals
         ax1.set_yticks([])
         q_above_text_loc = ax1.get_ylim()[1] - 0.01*(ax1.get_ylim()[1] - ax1.get_ylim()[0])
         q_below_text_loc = ax1.get_ylim()[0] + 0.04*(ax1.get_ylim()[1] - ax1.get_ylim()[0])
@@ -369,16 +369,23 @@ class HEN:
                 cold_idx += 1
 
             x_tick_loc[idx] = horizontal_loc
-            ax1.vlines(horizontal_loc, temperatures[idx, 0], temperatures[idx, 1], color = my_color, linewidth = 0.25) # Vertical line for each stream
-            ax1.plot(horizontal_loc, temperatures[idx, 1], color = my_color, marker = my_marker, markersize = 1) # Marker at the end of each vertical line
+            ax1.arrow(horizontal_loc, temperatures[idx, 0], 0, temperatures[idx, 1]-temperatures[idx, 0], color = my_color, length_includes_head = True,
+                      linewidth = 0.005, head_width = 0.0064, head_length = (self._plotted_ylines[-1]-self._plotted_ylines[0])/1500)
+            # Q and Fc_p values for each stream
             if show_properties:
-                q_above_text = r'$Q_{Top}$: %g %s' % (self.streams[x_tick_labels[idx]].q_above, self.heat_unit)
+                q_above_text = '$Q_{Top}$: %g' % (self.streams[x_tick_labels[idx]].q_above)
                 ax1.text(horizontal_loc, q_above_text_loc, q_above_text, ha = 'center', va = 'top') # Heat above the pinch point
-                q_below_text = r'$Q_{Bot}$: %g %s' % (self.streams[x_tick_labels[idx]].q_below, self.heat_unit)
+                q_below_text = '$Q_{Bot}$: %g' % (self.streams[x_tick_labels[idx]].q_below)
                 ax1.text(horizontal_loc, q_below_text_loc, q_below_text, ha = 'center', va = 'bottom') # Heat below the pinch point
                 cp_unit_plot = str(self.cp_unit * self.flow_unit).replace('delta_deg', '°', 1)
-                cp_text = r'$Fc_p$: %g %s' % (cp_vals[idx], cp_unit_plot)
-                ax1.text(horizontal_loc, cp_text_loc, cp_text, ha = 'center', va = 'bottom') # Heat below the pinch point
+                cp_text = f'$Fc_p$: {cp_vals[idx][0]:g}'
+                ax1.text(horizontal_loc, cp_text_loc, cp_text, ha = 'center', va = 'bottom') # F_cp value
+        
+        # Text with the units of Q and Fc_p in the center of the plot
+        if show_properties:
+                ax1.text(np.mean(ax1.get_xlim()), q_above_text_loc, f'Q unit: {self.heat_unit}', ha = 'center', va = 'top')
+                ax1.text(np.mean(ax1.get_xlim()), q_below_text_loc, f'Q unit: {self.heat_unit}', ha = 'center', va = 'bottom')
+                ax1.text(np.mean(ax1.get_xlim()), cp_text_loc, f'$Fc_p$ unit: {cp_unit_plot}', ha = 'center', va = 'bottom')
         
         # Horizontal lines for each temperature
         for idx, elem in enumerate(self._plotted_ylines):
@@ -403,6 +410,9 @@ class HEN:
             if show_temperatures:
                 ax1.text(np.mean(ax1.get_xlim()), len(self._plotted_ylines) - 1 - 0.01, 'Pinch Point', ha = 'center', va = 'top')
         
+        # Using tight_layout() with frontend causes the title / axes ticks to be cropped, and w_pad / h_pad do not seem to help
+        if tab_control is None:
+            plt.tight_layout()
         plt.show(block = False)
         if tab_control: # Embed into GUI
             generate_GUI_plot(fig1, tab_control, 'Temperature Interval Diagram')
@@ -452,15 +462,12 @@ class HEN:
         overlap_text = 'Maximum Heat recovery:\n%4g %s' % (overlap, self.first_utility.units)
         ax2.text(overlap_text_loc, top_text_loc, overlap_text, ha = 'center', va = 'top')
 
+        # Using tight_layout() with frontend causes the title / axes ticks to be cropped, and w_pad / h_pad do not seem to help
+        if tab_control is None:
+            plt.tight_layout()
         plt.show(block = False)
         if tab_control: # Embed into GUI
             generate_GUI_plot(fig2, tab_control, 'Composite Curve')
-
-        """ TODO: remove whitespace around the graphs
-        ax = gca;
-        ti = ax.TightInset;
-        ax.Position = [ti(1), ti(2), 1 - ti(1) - ti(3), 1 - ti(2) - ti(4)]; % Removing whitespace from the graph
-        """
 
     def _place_exchangers(self, pinch, num_of_intervals, upper, lower, forbidden, required, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), exchanger_type = 'Fixed Head', called_by_GMS = False):
         """
@@ -526,9 +533,17 @@ class HEN:
                     # Cold stream not present in this interval above pinch. Intervals are counted in reverse bc Q_exchanger is reversed later
                     elif pinch == 'above' and self._interval_heats[~self.hot_streams&self.active_streams][cold_stidx, -intervalidx-1] == 0:
                         Q_exchanger[rowidx, colidx, intervalidx] = m.Const(0, f'Q_{rowidx}{colidx}{intervalidx+1}')
+                        # Rejecting Q values because there is no cold stream in interval. However, if hot stream is in interval, there should be an eqn due to residuals
+                        if np.sum(self._interval_heats[self.hot_streams&self.active_streams][hot_stidx, -num_of_intervals:]) != 0 and (
+                            intervalidx >= (self._interval_heats[self.hot_streams&self.active_streams][hot_stidx, -num_of_intervals:][::-1] != 0).argmax()):
+                            has_hot_eqn[rowidx, intervalidx] = True
                     # Cold stream not present in this interval below pinch. Intervals are counted in reverse bc Q_exchanger is reversed later
                     elif colidx >= len(self.cold_utilities) and pinch == 'below' and self._interval_heats[~self.hot_streams&self.active_streams][cold_stidx, :num_of_intervals][-intervalidx-1] == 0:
                         Q_exchanger[rowidx, colidx, intervalidx] = m.Const(0, f'Q_{rowidx}{colidx}{intervalidx+1}')
+                        # Rejecting Q values because there is no cold stream in interval. However, if hot stream is in interval, there should be an eqn due to residuals
+                        if np.sum(self._interval_heats[self.hot_streams&self.active_streams][hot_stidx, :num_of_intervals]) != 0 and (
+                        intervalidx >= (self._interval_heats[self.hot_streams&self.active_streams][hot_stidx, :num_of_intervals][::-1] != 0).argmax()):
+                            has_hot_eqn[rowidx, intervalidx] = True
                     # Hot stream not present above pinch (cold was checked previously)
                     elif rowidx >= len(self.hot_utilities) and pinch == 'above' and np.sum(self._interval_heats[self.hot_streams&self.active_streams][hot_stidx, -num_of_intervals:]) == 0:
                         Q_exchanger[rowidx, colidx, intervalidx] = m.Const(0, f'Q_{rowidx}{colidx}{intervalidx+1}')
@@ -698,8 +713,8 @@ class HEN:
                 if rowidx < len(self.hot_utilities) and colidx < len(self.cold_utilities):
                     continue
                 # Elements with nonzero values are stored as intermediates within Q_exc_tot
-                # 1e-6 is rounding to prevent extremely small heats from being counted. Cutoff may need extra tuning
-                elif not isinstance(Q_exc_tot[rowidx, colidx], (int, float)) and Q_exc_tot[rowidx, colidx][0] > 1e-6:
+                # 2e-5 is rounding to prevent extremely small heats from being counted. Cutoff may need extra tuning
+                elif not isinstance(Q_exc_tot[rowidx, colidx], (int, float)) and Q_exc_tot[rowidx, colidx][0] > 2e-5:
                     Q_tot_results.iat[rowidx, colidx] = Q_exc_tot[rowidx, colidx][0]
 
                     # Obtaining ΔT values for ΔT_lm
@@ -753,8 +768,10 @@ class HEN:
                         else:
                             costs.iat[rowidx, colidx] = 15.883196220397641*Ac + 24808.40692590638
                     
+        Q_tot_results = np.round(Q_tot_results, 5) # Ignoring very small decimals that cause integers to be non-integers
         costs = np.round(costs, 2) # Money needs only 2 decimals
         results = pd.concat((Q_tot_results, costs), keys = ['Q', 'cost'])
+        m.cleanup() # Deletes temp files generated by GEKKO
         return results
     
     def solve_HEN(self, pinch, depth = 0, upper = None, lower = None, forbidden = None, required = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), exchanger_type = 'Fixed Head'):
@@ -792,11 +809,11 @@ class HEN:
         # Setting the upper heat exchanged limit for each pair of streams
         if upper is None: # Automatically set the upper limits
             upper = np.zeros_like(forbidden, dtype = np.float64)
-            upper = self._get_maximum_heats(upper, pinch, num_of_intervals)
+            upper = self._get_maximum_heats(upper, pinch)
         elif isinstance(upper, (int, float)): # A single value was passed, representing a maximum threshold
             temp_upper = upper
             upper = np.zeros_like(forbidden, dtype = np.float64)
-            upper = self._get_maximum_heats(upper, pinch, num_of_intervals)
+            upper = self._get_maximum_heats(upper, pinch)
             upper[upper > temp_upper] = temp_upper # Setting the given upper limit only for streams that naturally had a higher limit
         elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
             raise ValueError('Upper must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
@@ -887,15 +904,13 @@ class HEN:
             try:
                 unique_sol = True
                 results = self._place_exchangers(pinch, num_of_intervals, upper, lower, local_forbidden, local_required, U, U_unit, exchanger_type, called_by_GMS = True)
-                # Some solutions return wrong Q for the hot streams. This if-statement prevents them from being recorded
-                if np.allclose(results.loc['Q'].iloc[1:].sum(axis=1), np.sum(self._interval_heats[:sum(self.hot_streams), -num_of_intervals:], axis = 1), 0, 1e-6):
-                    for prev_sol in self.results_above:
-                        if np.allclose(prev_sol.loc['Q'], results.loc['Q'], 0, 1e-6): # Using a 1e-6 absolute tolerance to compare heats
-                            unique_sol = False
-                            break
-                    if unique_sol:
-                        self.results_above.append(results)
-                        print(f'Found a unique solution during iteration {iter_count + 1}. Solution has a cost of ${results.loc["cost"].sum().sum():,.2f}')
+                for prev_sol in self.results_above:
+                    if np.allclose(prev_sol.loc['Q'], results.loc['Q'], 0, 1e-6): # Using a 1e-6 absolute tolerance to compare heats
+                        unique_sol = False
+                        break
+                if unique_sol:
+                    self.results_above.append(results)
+                    print(f'Found a unique solution during iteration {iter_count + 1}. Solution has a cost of ${results.loc["cost"].sum().sum():,.2f}')
             except Exception:
                 self._failed_depth_one.add(elem)
 
@@ -1179,11 +1194,26 @@ class HEN:
         with open(name, 'rb') as f:
             return pickle.load(f)
     
-    def _get_maximum_heats(self, upper, pinch, num_of_intervals):
+    def _get_maximum_heats(self, upper, pinch):
         """
         Auxiliary function to calculate the maximum heat transferable between two streams.
         Shouldn't be called by the user; rather, it is automatically called by solve_HEN().
         """
+        # num_of_intervals setup
+        if pinch.casefold() == 'above':
+            if self.first_utility_loc == 0:
+                if self.GUI_terminal is not None:
+                    self.GUI_terminal.print2screen('ERROR: This HEN doesn\'t have anything above the pinch', True)
+                raise ValueError('This HEN doesn\'t have anything above the pinch')
+            else:
+                num_of_intervals = self.first_utility_loc + 1
+        elif pinch.casefold() == 'below':
+            if self.first_utility_loc == 0: # No pinch point --> take all intervals
+                num_of_intervals = self._interval_heats[self.active_streams].shape[-1]
+            else:
+                num_of_intervals = self._interval_heats[self.active_streams, :-self.first_utility_loc-1].shape[-1]
+        
+        # Getting the maximum heats
         for rowidx in range(upper.shape[0]):
             for colidx in range(upper.shape[1]):
                 if rowidx < len(self.hot_utilities) and pinch == 'below': # No hot utilities are used below pinch
