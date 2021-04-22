@@ -6,6 +6,9 @@
 build
 dist
 *.ps1
+*.bat
+*.command
+*.zip
 
 # Diagrams
 *.drawio
