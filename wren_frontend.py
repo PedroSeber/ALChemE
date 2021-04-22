@@ -76,21 +76,21 @@ class WReN_input(ttk.Frame):
         
         # Defining variables
         self.WReN_stream_labels = ['Process Name', 'Sink Concentration',
-                             'Source Concentration', '',
+                             'Source Concentration', '', 'Contaminants',
                              'Sink Flow', 'Source Flow','']
         self.input_entries = {}
         
         # Arrange process input components
         for row in range(1,3):
-            for col in range(7):
-                if row == 1 and col in [0, 1, 2, 4, 5]:
+            for col in range(8):
+                if row == 1 and col in [0, 1, 2, 4, 5, 6]:
                     l = ttk.Label(self, text=self.WReN_stream_labels[col])
                     l.grid(row=row, column=col, padx=10)
-                elif row == 1 and col in [3, 6]:
+                elif row == 1 and col in [3, 7]:
                     l = ttk.Label(self, width=12)
                     l.grid(row=row, column=col, padx=10)
                 else:
-                    if col in [0, 1, 2, 4, 5]:
+                    if col in [0, 1, 2, 4, 5, 6]:
                         e = ttk.Entry(self, width=12)
                         e.grid(row=row, column=col)
                         self.input_entries[str([row, col])] = e
@@ -98,14 +98,14 @@ class WReN_input(ttk.Frame):
                         m = create_dropdown_menu(self, ['mg/kg', 'ppm'])
                         m[0].grid(row = row, column=col, sticky='w')
                         self.input_entries[str([row, col])] = m[1]
-                    elif col == 6:
+                    elif col == 7:
                         m = create_dropdown_menu(self, ['kg/s', 'lb/s', 'J/(kg·K)'])
                         m[0].grid(row = row, column=col, sticky='w')
                         self.input_entries[str([row, col])] = m[1]
         
         # Initialize and arrange 'Add Process' button
         sub_stream = ttk.Button(self, text="Add Process")
-        sub_stream.grid(row=2, column=8, sticky='nsew')
+        sub_stream.grid(row=2, column=9, sticky='nsew')
 
 class WReN_object_explorer(ttk.Frame):
     '''
@@ -320,3 +320,12 @@ def create_dropdown_menu(master, options):
     var = tk.StringVar(master)
     menu = ttk.OptionMenu(master, var, options[0], *options)
     return [menu, var]
+
+
+
+
+
+
+
+
+
