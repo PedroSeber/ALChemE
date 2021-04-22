@@ -74,9 +74,10 @@ class WReN:
         # Note: calling index at the same time the pd.Series is generated causes the units to be stripped 
         if not isinstance(sink_conc, pd.Series):
             sink_conc = pd.Series(sink_conc)
-            sink_conc.index = conc_names
             source_conc = pd.Series(source_conc)
-            source_conc.index = conc_names
+            if conc_names is not None:
+                sink_conc.index = conc_names
+                source_conc.index = conc_names
 
         # Generating the process object and adding it to the WReN object
         temp = pd.Series(Process(sink_conc, source_conc, sink_flow, source_flow), [process_name])
