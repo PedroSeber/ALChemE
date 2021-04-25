@@ -76,6 +76,7 @@ class WReN_input(ttk.Frame):
         
         # Defining variables
         self.WReN_object = WReN_object
+        self.WReN_oeTree = WReN_object_explorer.objectExplorer
         self.WReN_stream_labels = ['Process Name', 'Sink Concentration',
                              'Source Concentration', '', 'Contaminants',
                              'Sink Flow', 'Source Flow','']
@@ -156,7 +157,7 @@ class WReN_input(ttk.Frame):
             flow_unit = unyt.kg/unyt.s
         
         # Pass values to HEN object
-        self.WReN_object.add_process(sinkconc, sourceconc, sinkflow, sourceflow, processname, conc_unit, flow_unit, contaminants)
+        self.WReN_object.add_process(sinkconc, sourceconc, sinkflow, sourceflow, processname, conc_unit, flow_unit, contaminants, self.WReN_oeTree)
 
 class WReN_object_explorer(ttk.Frame):
     '''
@@ -221,11 +222,11 @@ class WReN_objE_tree(ttk.Treeview):
         self.configure(yscrollcommand=self.verscrlbar.set)
         
         # Intialize object classes in treeview
-        self.ProcessNode = self.insert('', index=0, iid=0, text='PROCESSES', values=('Source Concentration', 'Sink Concentration', 'Sink Flow Rate', 'Status'))
+        self.ProcessNode = self.insert('', index=0, iid=0, text='PROCESSES', values=('Sink Concentrations', 'Source Concentrations', 'Sink Flow Rate', 'Source Flow Rate', 'Status'))
         self.SolutionNode = self.insert('',index=1, iid=1, text='SOLUTION', values=('Cost'))
         
     def receive_new_process(self, oeDataVector):
-        self.insert(self.ProcessNode, 'end', text=oeDataVector[0], values=(f'{oeDataVector[1].value:.6f}'.rstrip('0').rstrip('.') + ' ' + str(oeDataVector[1].units), f'{oeDataVector[2].value:.6f}'.rstrip('0').rstrip('.') + ' ' + str(oeDataVector[1].units), f'{oeDataVector[3].value:.6f}'.rstrip('0').rstrip('.') + ' ' + str(oeDataVector[3].units), f'{oeDataVector[4].value:5.6f}'.rstrip('0').rstrip('.') + ' ' + str(oeDataVector[4].units), 'Active'), tags='selectable')
+        self.insert(self.ProcessNode, 'end', text=oeDataVector[0], values=(oeDataVector[1], oeDataVector[2], str(oeDataVector[3]), str(oeDataVector[4]), 'Active'), tags='selectable')
     
 class WReN_objE_terminal(tk.Text):
     def __init__(self, master, WReN_object):
@@ -254,6 +255,7 @@ class WReN_optimization_suite(ttk.Frame):
         osLabel.grid(row=0, column=0, sticky='nw')
         
         # Define variables
+        self.WReN_constraint_explorer = WReN_constraint_explorer
         self.input_entries = {}
         
         # Initialize material exchange limit entries
@@ -267,7 +269,7 @@ class WReN_optimization_suite(ttk.Frame):
         melSink = ttk.Entry(self, width=12)
         melEntry = ttk.Entry(self, width=12)
         melUnits = create_dropdown_menu(self, ['kg/s'])
-        melButton = ttk.Button(self, text='Add Constraint')
+        melButton = ttk.Button(self, text='Add Constraint', command=self.add_flow_limit)
         
         # Initialize forbidden/required matches
         frmLabel = ttk.Label(self, text='Match Constraint', font=('TkDefaultFont', 9, 'italic', 'underline'))
@@ -276,7 +278,7 @@ class WReN_optimization_suite(ttk.Frame):
         frmSinkL = ttk.Label(self, text='Sink')
         frmSource = ttk.Entry(self, width=12)
         frmSink = ttk.Entry(self, width=12)
-        frmButton = ttk.Button(self, text='Add Constraint')
+        frmButton = ttk.Button(self, text='Add Constraint', command=self.add_spec_match)
         
         # Initialize source/sink process cost per flow setting
         sspcLabel = ttk.Label(self, text='Cost Matrix Match', font=('TkDefaultFont', 9, 'italic', 'underline'))
@@ -301,7 +303,7 @@ class WReN_optimization_suite(ttk.Frame):
         # Initialize 'Run WReN Optimization' button
         rwoButton = ttk.Button(self, text='Run WReN Optimization')
         
-        # Arrange heat transfer constraint widgets
+        # Arrange flow constraint widgets
         melLabel.grid(row=3, column=0)
         melSourceL.grid(row=3, column=1, padx=10)
         melSinkL.grid(row=3, column=2, padx=10)
@@ -367,6 +369,55 @@ class WReN_optimization_suite(ttk.Frame):
         # Place 'Run WReN Optimization' button        
         self.columnconfigure(2, weight=1)
         rwoButton.grid(row=14, column=2, pady=(25,20))
+    
+    def add_flow_limit(self):
+        raw_input = []
+        for col in range(5):
+            rawdata = self.input_entries[str([4, col])].get()
+            if rawdata == '': rawdata = None
+            raw_input.append(rawdata)
+        
+        # Assign variables to processes
+        lcSink = raw_input[1]
+        lcSource = raw_input[2]
+        
+        # Obtain flow rate limit
+        lcLimit = float(raw_input[3])
+        
+        # Convert flow units to unyt
+        if raw_input[-1] == 'kg/s':
+            lcUnit = unyt.kg/unyt.s
+        
+        dataVec = [lcSink, lcSource, str(lcLimit*lcUnit)]
+        
+        if raw_input[0] == 'Upper Limit':
+            self.WReN_constraint_explorer.ucExplorer.add_ul_constraint(dataVec)
+        else:
+            self.WReN_constraint_explorer.ucExplorer.add_ll_constraint(dataVec)
+        
+        for col in [1, 2]:
+            self.input_entries[str([4, col])].delete(0, 'end')
+    
+    def add_spec_match(self):
+        raw_input = []
+        for col in range(3):
+            rawdata = self.input_entries[str([7,col])].get()
+            if rawdata == '': rawdata = None
+            raw_input.append(rawdata)
+        
+        # Assign variables to processes
+        smSink = raw_input[1]
+        smSource = raw_input[2]
+        
+        dataVec = [smSink, smSource]
+        
+        if raw_input[0] == 'Forbidden':
+            self.WReN_constraint_explorer.ucExplorer.add_fm_constraint(dataVec)
+        else:
+            self.WReN_constraint_explorer.ucExplorer.add_rm_constraint(dataVec)
+        
+        for col in [1, 2]:
+            self.input_entries[str([7, col])].delete(0, 'end')
 
 class WReN_constraint_explorer(ttk.Frame):
     def __init__(self, master):
@@ -419,6 +470,29 @@ class WReN_cE_tree(ttk.Treeview):
         self.fmNode = self.insert('', index=2, iid=2, text='FORBIDDEN MATCHES', values=('Source', 'Sink'))
         self.rmNode = self.insert('', index=3, iid=3, text='REQUIRED MATCHES', values=('Source', 'Sink'))
         self.cmNode = self.insert('', index=4, iid=4, text='COST MATRIX')
+
+        # Initialize 'Single Click' Event (Show Selected Object in Object Explorer)
+        self.bind('<Button-1>', self.on_click)
+
+    def on_click(self, event):
+        tree = event.widget
+        item_name = tree.identify_row(event.y)
+        if item_name:
+            tags = tree.item(item_name, 'tags')
+            if tags and (tags[0] == 'selectable'):
+                tree.selection_set(item_name)
+    
+    def add_ul_constraint(self, constraint_data):
+        self.insert(self.ulNode, 'end', text='', values=(str(constraint_data[0]), str(constraint_data[1]), str(constraint_data[2])), tags='selectable')
+        
+    def add_ll_constraint(self, constraint_data):
+        self.insert(self.llNode, 'end', text='', values=(str(constraint_data[0]), str(constraint_data[1]), str(constraint_data[2])), tags='selectable')
+        
+    def add_fm_constraint(self, constraint_data):
+        self.insert(self.fmNode, 'end', text='', values=(str(constraint_data[0]), str(constraint_data[1])), tags='selectable')
+        
+    def add_rm_constraint(self, constraint_data):
+        self.insert(self.rmNode, 'end', text='', values=(str(constraint_data[0]), str(constraint_data[1])), tags='selectable')
 
 # FUNCTIONS
 def create_dropdown_menu(master, options):
