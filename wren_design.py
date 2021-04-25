@@ -84,12 +84,15 @@ class WReN:
         self.active_processes = np.append(self.active_processes, True)
 
         if GUI_oe_tree is not None:
-            # CHANGE ME
-            temp_diff = t2 - t1
-            temp_diff = temp_diff.tolist() * self.delta_temp_unit
-            oeDataVector = [stream_name, t1, t2, cp*flow_rate, cp*flow_rate*temp_diff]
-            print(oeDataVector)
-            GUI_oe_tree.receive_new_stream(oeDataVector)
+            # Obtain vectors of sink/source concentrations
+            sinkConcVec = []
+            sourceConcVec = []
+            for name in self.processes[process_name].sink_conc.index:
+                sinkConcVec.append(f'{name}: {self.processes[process_name].sink_conc[name]}')
+                sourceConcVec.append(f'{name}: {self.processes[process_name].source_conc[name]}')
+            # Send to object explorer
+            oeDataVector = [process_name, sinkConcVec, sourceConcVec, sink_flow, source_flow]
+            GUI_oe_tree.receive_new_process(oeDataVector)
 
     def activate_process(self, processes_to_change):
         if isinstance(processes_to_change, str): # Only one process name was passed
