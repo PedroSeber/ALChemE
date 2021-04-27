@@ -74,14 +74,25 @@ class WReN:
         # Note: calling index at the same time the pd.Series is generated causes the units to be stripped 
         if not isinstance(sink_conc, pd.Series):
             sink_conc = pd.Series(sink_conc)
-            sink_conc.index = conc_names
             source_conc = pd.Series(source_conc)
-            source_conc.index = conc_names
+            if conc_names is not None:
+                sink_conc.index = conc_names
+                source_conc.index = conc_names
 
         # Generating the process object and adding it to the WReN object
         temp = pd.Series(Process(sink_conc, source_conc, sink_flow, source_flow), [process_name])
         self.processes = pd.concat([self.processes, temp])
         self.active_processes = np.append(self.active_processes, True)
+
+        # Appending to the cost matrix, or creating it if the current process is the first
+        if 'costs' in dir(self):
+            col_names = ['WW']
+            col_names.extend(self.processes.index[self.active_processes])
+            temp = pd.DataFrame(np.zeros((1, len(self.processes) + 1)), index = [process_name], columns = col_names)
+            self.costs = self.costs.append(temp)
+            self.costs.iloc[:, -1] = 0.0
+        else:
+            self.costs = pd.DataFrame(np.zeros((2, 2)), index = ['FW', process_name], columns = ['WW', process_name])
 
         if GUI_oe_tree is not None:
             # Obtain vectors of sink/source concentrations
