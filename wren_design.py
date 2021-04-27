@@ -146,7 +146,10 @@ class WReN:
     def delete(self, obj_to_del):
         if obj_to_del in self.processes:
             loc = self.processes.index.get_loc(obj_to_del)
-            self.active_processes = np.delete(self.active_processess, loc)
+            self.active_processes = np.delete(self.active_processes, loc)
+            # Removing the process from the cost matrix
+            self.costs.drop(index = obj_to_del, inplace = True)
+            self.costs.drop(columns = obj_to_del, inplace = True)
             del self.processes[obj_to_del]
         else:
             raise ValueError(f'{obj_to_del} not found in the processes')
@@ -188,6 +191,10 @@ class WReN:
             lower = np.ones_like(forbidden, dtype = np.float64) * lower
         elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
             raise ValueError('Lower must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
+        
+        # GEKKO does not like DataFrames
+        if isinstance(costs, pd.DataFrame):
+            costs = np.array(costs)
         
         # Starting GEKKO
         m = GEKKO(remote = False)
