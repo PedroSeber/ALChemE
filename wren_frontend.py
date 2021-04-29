@@ -244,6 +244,11 @@ class WReN_objE_terminal(tk.Text):
         # Initialize >>>
         self.insert('end', '-'*48+ '***INITIALIZED***' + '-'*48  + '\n\n')
         self.insert('end', '>>> ')
+        
+    def print2screen(self, message, newcommand):
+        self.insert('end', message + '\n')
+        if newcommand == True:
+            self.insert('end', '>>> ')
 
 class WReN_optimization_suite(ttk.Frame):
     def __init__(self, master, WReN_object, WReN_object_explorer, WReN_constraint_explorer):
@@ -257,6 +262,7 @@ class WReN_optimization_suite(ttk.Frame):
         # Define variables
         self.WReN_object = WReN_object
         self.WReN_constraint_explorer = WReN_constraint_explorer
+        self.WReN_terminal_display = WReN_object_explorer.objectTerminal
         self.input_entries = {}
         
         # Initialize material exchange limit entries
@@ -477,7 +483,14 @@ class WReN_optimization_suite(ttk.Frame):
         self.input_entries[str([13, 0])].delete(0, 'end')
     
     def run_optimization(self):
+        self.WReN_terminal_display.print2screen('Running WReN optimization...', False)
         self.WReN_object.solve_WReN(self.WReN_object.costs, None, None, None, None)
+        self.WReN_terminal_display.print2screen(f'Cost: ${self.WReN_object.results.loc["cost"].sum().sum():.2f}\n', False)
+        self.WReN_terminal_display.print2screen(f'Solution Match Matrix (Flow Rate in {self.WReN_object.flow_unit})', False)
+        self.WReN_terminal_display.print2screen(str(self.WReN_object.results.loc['flows']) + '\n', False)
+        self.WReN_terminal_display.print2screen('Solution Match Matrix (Cost in $)', False)
+        self.WReN_terminal_display.print2screen(str(self.WReN_object.results.loc['cost']) + '\n', False)
+        self.WReN_terminal_display.print2screen('Solver has finished.', True)
 
 class WReN_constraint_explorer(ttk.Frame):
     def __init__(self, master):
