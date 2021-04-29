@@ -911,7 +911,7 @@ class HEN_GUI_optimization_controls(ttk.Frame):
                     self.HEN_object_explorer.objectExplorer.receive_new_upper_solution([solNum, (elem.loc["Q"]>0).sum().sum(), elem.loc["cost"].sum().sum()])
                     # Check if last solution
                     if solNum == len(self.HEN_object.results_above):
-                        self.HEN_object.objectVisualizer.print2screen('-'*20+ '\n' + 'Solver has finished.\n', True)
+                        self.HEN_object_explorer.objectVisualizer.print2screen('-'*20+ '\n' + 'Solver has finished.\n', True)
                     solNum += 1
             else:
                 self.HEN_object_explorer.objectExplorer.delete(*self.HEN_object_explorer.objectExplorer.get_children(4))
@@ -931,7 +931,7 @@ class HEN_GUI_optimization_controls(ttk.Frame):
                     self.HEN_object_explorer.objectExplorer.receive_new_lower_solution([solNum, (elem.loc["Q"]>0).sum().sum(), elem.loc["cost"].sum().sum()])
                     # Check if last solution
                     if solNum == len(self.HEN_object.results_below):
-                        self.HEN_object.objectVisualizer.print2screen('-'*20+ '\n' + 'Solver has finished.\n', True)
+                        self.HEN_object_explorer.objectVisualizer.print2screen('-'*20+ '\n' + 'Solver has finished.\n', True)
                     solNum+=1
         else:
             self.HEN_object_explorer.objectVisualizer.print2screen(errorMessage, True)
