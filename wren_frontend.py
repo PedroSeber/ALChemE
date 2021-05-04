@@ -120,7 +120,7 @@ class WReN_input(ttk.Frame):
                 self.input_entries[str([2, col])].delete(0, 'end')
 
         # Check if process name is None
-        if rawdata[0] != None:
+        if raw_input[0] is not None:
             processname = rawdata[0]
         else:
             processname = None
@@ -130,7 +130,7 @@ class WReN_input(ttk.Frame):
         sourceconcRaw = raw_input[2].strip().split(",")
         
         # Split contaminants if not None
-        if raw_input[4] != None:
+        if raw_input[4] is not None:
             contaminants = raw_input[4].strip().split(",")
         else:
             contaminants = None
@@ -143,7 +143,7 @@ class WReN_input(ttk.Frame):
         sinkflow = float(raw_input[5])
         
         # Convert source flow rate to float if not None
-        if raw_input[6] != None:
+        if raw_input[6] is not None:
             sourceflow = float(raw_input[6])
         else:
             sourceflow = None
@@ -244,6 +244,11 @@ class WReN_objE_terminal(tk.Text):
         # Initialize >>>
         self.insert('end', '-'*48+ '***INITIALIZED***' + '-'*48  + '\n\n')
         self.insert('end', '>>> ')
+        
+    def print2screen(self, message, newcommand):
+        self.insert('end', message + '\n')
+        if newcommand == True:
+            self.insert('end', '>>> ')
 
 class WReN_optimization_suite(ttk.Frame):
     def __init__(self, master, WReN_object, WReN_object_explorer, WReN_constraint_explorer):
@@ -255,7 +260,9 @@ class WReN_optimization_suite(ttk.Frame):
         osLabel.grid(row=0, column=0, sticky='nw')
         
         # Define variables
+        self.WReN_object = WReN_object
         self.WReN_constraint_explorer = WReN_constraint_explorer
+        self.WReN_terminal_display = WReN_object_explorer.objectTerminal
         self.input_entries = {}
         
         # Initialize material exchange limit entries
@@ -289,19 +296,19 @@ class WReN_optimization_suite(ttk.Frame):
         sspcSink = ttk.Entry(self, width=12)
         sspcCPF = ttk.Entry(self, width=12)
         sspcUnits = create_dropdown_menu(self, ['$/(kg/s)'])
-        sspcButton = ttk.Button(self, text='Add Cost')
+        sspcButton = ttk.Button(self, text='Add Cost', command=self.add_sspc_match)
         
         # Initialize general cost per flow setting
         gcLabel = ttk.Label(self, text='General Cost Matrix', font=('TkDefaultFont', 9, 'italic', 'underline'))
         gcCFPL = ttk.Label(self, text='Cost Per Flow')
         gcCFP = ttk.Entry(self, width=12)
         gcUnits = create_dropdown_menu(self, ['$/(kg/s)'])
-        gcFSButton = ttk.Button(self, text='          Add Cost\n(Freshwater Sources)')
-        gcWSButton = ttk.Button(self, text='         Add Cost\n(Wastewater Sinks)')
-        gcRButton = ttk.Button(self, text='    Add Cost\n(All Recycles)')
+        gcFSButton = ttk.Button(self, text='          Add Cost\n(Freshwater Sources)', command=self.add_pc_freshwatersources)
+        gcWSButton = ttk.Button(self, text='         Add Cost\n(Wastewater Sinks)', command=self.add_pc_wastewatersinks)
+        gcRButton = ttk.Button(self, text='    Add Cost\n(All Recycles)', command=self.add_pc_recycles)
         
         # Initialize 'Run WReN Optimization' button
-        rwoButton = ttk.Button(self, text='Run WReN Optimization')
+        rwoButton = ttk.Button(self, text='Run WReN Optimization', command=self.run_optimization)
         
         # Arrange flow constraint widgets
         melLabel.grid(row=3, column=0)
@@ -418,6 +425,72 @@ class WReN_optimization_suite(ttk.Frame):
         
         for col in [1, 2]:
             self.input_entries[str([7, col])].delete(0, 'end')
+    
+    def add_sspc_match(self):
+        # Retrieve data
+        raw_input = []
+        for col in range(4):
+            rawdata = self.input_entries[str([10, col])].get()
+            if rawdata == '': rawdata = None
+            raw_input.append(rawdata)
+        
+        #Assign variables to processes
+        sspcSource = raw_input[0]
+        sspcSink = raw_input[1]
+        
+        # Convert cost per flow into float
+        sspcCost = float(raw_input[2])
+        
+        for col in [0, 1, 2]:
+            self.input_entries[str([10, col])].delete(0, 'end')
+        
+        # Modify match
+        self.WReN_object.costs.at[sspcSource,sspcSink] = sspcCost
+        
+        print(self.WReN_object.costs)
+        
+    def add_pc_freshwatersources(self):
+        # Retrieve data
+        gcCost = float(self.input_entries[str([13,0])].get())
+        
+        # Set all FW sources to gcCost
+        self.WReN_object.costs.iloc[0,:] = gcCost
+        
+        print(self.WReN_object.costs)
+        
+        self.input_entries[str([13, 0])].delete(0, 'end')
+        
+    def add_pc_wastewatersinks(self):
+        # Retrieve data
+        gcCost = float(self.input_entries[str([13,0])].get())
+        
+        # Set all WW sources to gcCost
+        self.WReN_object.costs.iloc[:,0] = gcCost
+        
+        print(self.WReN_object.costs)
+
+        self.input_entries[str([13, 0])].delete(0, 'end')
+
+    def add_pc_recycles(self):
+        # Retrieve data
+        gcCost = float(self.input_entries[str([13,0])].get())
+        
+        # Set all recycles to 
+        self.WReN_object.costs.iloc[1:,1:] = gcCost
+        
+        print(self.WReN_object.costs)
+
+        self.input_entries[str([13, 0])].delete(0, 'end')
+    
+    def run_optimization(self):
+        self.WReN_terminal_display.print2screen('Running WReN optimization...', False)
+        self.WReN_object.solve_WReN(self.WReN_object.costs, None, None, None, None)
+        self.WReN_terminal_display.print2screen(f'Cost: ${self.WReN_object.results.loc["cost"].sum().sum():.2f}\n', False)
+        self.WReN_terminal_display.print2screen(f'Solution Match Matrix (Flow Rate in {self.WReN_object.flow_unit})', False)
+        self.WReN_terminal_display.print2screen(str(self.WReN_object.results.loc['flows']) + '\n', False)
+        self.WReN_terminal_display.print2screen('Solution Match Matrix (Cost in $)', False)
+        self.WReN_terminal_display.print2screen(str(self.WReN_object.results.loc['cost']) + '\n', False)
+        self.WReN_terminal_display.print2screen('Solver has finished.', True)
 
 class WReN_constraint_explorer(ttk.Frame):
     def __init__(self, master):
