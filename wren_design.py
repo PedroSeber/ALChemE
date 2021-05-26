@@ -235,7 +235,7 @@ class WReN:
             #    conc_mat = [myprocess.source_conc[contam].value for myprocess in self.processes[self.active_processes]]
             #    m.Equation(m.sum(flows[1:, colidx] * conc_mat) == self.processes[self.active_processes].iat[colidx - 1].sink_flow.value)
         
-        m.Minimize(m.sum(flows * costs))
+        m.Minimize(m.sum(flows**(0.6) * costs))
         m.options.IMODE = 3 # Steady-state optimization
         m.options.solver = 1 # APOPT solver
         m.options.csv_write = 2
@@ -272,7 +272,7 @@ class WReN:
                     flow_results.iat[rowidx, colidx] = flows[rowidx, colidx].value.value
                 elif 'GKVariable' in str(type(flows[rowidx, colidx])) and flows[rowidx, colidx][0] > 1e-5:
                     flow_results.iat[rowidx, colidx] = flows[rowidx, colidx][0]
-        cost_results = flow_results * costs
+        cost_results = flow_results**(0.6) * costs
         cost_results = np.round(cost_results, 2) # Money needs only 2 decimals
         flow_results = np.round(flow_results, 5) # Avoids large number of unnecessary significant digits
         self.results = pd.concat((flow_results, cost_results), keys = ['flows', 'cost'])
