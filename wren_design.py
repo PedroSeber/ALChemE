@@ -10,11 +10,12 @@ import unyt
 from tkinter import ttk
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
 import warnings
-# Used in the HEN.save() and HEN.load() functions
+# Used in the WReN.save() and WReN.load() functions
 import os
 import pickle
-# Used in the HEN.solve_HEN() functions
+# Used in the WReN.solve_WReN() functions
 from gekko import GEKKO
+import mystic as my
 import pdb
 
 class WReN:
@@ -277,6 +278,124 @@ class WReN:
         flow_results = np.round(flow_results, 5) # Avoids large number of unnecessary significant digits
         self.results = pd.concat((flow_results, cost_results), keys = ['flows', 'cost'])
         
+
+    def solve_WReN_mystic(self, water_costs, upper = None, lower = None, forbidden = None, required = None):
+        """
+        The main function used by ALChemE to automatically set flowrates among processes, freshwater, and wastewater
+        """
+        # Forbidden and required matches
+        if forbidden is None:
+            # +1 on the rows represents "from freshwater", +1 on the columns represents "to wastewater"
+            forbidden = np.zeros((len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1), dtype = bool)
+        elif forbidden.shape != (len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1):
+            raise ValueError('Forbidden must be a %dx%d matrix' % (len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1))
+        if required is None:
+            required = np.zeros_like(forbidden)
+        elif required.shape != forbidden.shape:
+            raise ValueError('Required must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
+        
+        # Setting the upper heat exchanged limit for each pair of streams
+        if upper is None: # Automatically set the upper limits
+            upper = np.zeros_like(forbidden, dtype = np.float64)
+            upper = self._get_maximum_flows(upper)
+        elif isinstance(upper, (int, float)): # A single value was passed, representing a maximum threshold
+            temp_upper = upper
+            upper = np.zeros_like(forbidden, dtype = np.float64)
+            upper = self._get_maximum_flows(upper)
+            upper[upper > temp_upper] = temp_upper # Setting the given upper limit only for streams that naturally had a higher limit
+        elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
+            raise ValueError('Upper must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
+        # Setting the lower heat exchanged limit for each pair of streams
+        if lower is None:
+            lower = np.zeros_like(forbidden, dtype = np.float64)
+        elif isinstance(lower, (int, float)): # A single value was passed, representing a minimum threshold
+            if np.sum(lower > upper):
+                if self.GUI_terminal is not None:
+                    self.GUI_terminal.print2screen(f'The lower threshold you passed is greater than the maximum heat of {np.sum(lower > upper)} streams\n', True)
+                raise ValueError(f'The lower threshold you passed is greater than the maximum heat of {np.sum(lower > upper)} streams')
+            lower = np.ones_like(forbidden, dtype = np.float64) * lower
+        elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
+            raise ValueError('Lower must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
+        
+        #flows = np.zeros_like(forbidden.flatten(), dtype = np.object)
+        water_costs = water_costs.values.flatten()
+
+        bounds = []
+        for colidx in range(upper.shape[1]):
+            for rowidx in range(upper.shape[0]):
+                bounds.append((lower[rowidx, colidx], upper[rowidx, colidx]))
+
+        # x0 is always 0 because FW is never sent to WW
+        eqn = 'x0 == 0\n'
+        # Eqn 1: Total mass balance for sinks
+        cons_len = len(self.processes[self.active_processes]) + 1 # +1 for FW coming into the process
+        sink_flow = []
+        for process in self.processes[self.active_processes]:
+            sink_flow.append(process.sink_flow.value)
+        for bigidx in range(cons_len-1): # Goes until cons_len-1 because flows to wastewater are unconstrained. Compensated with the bigidx+1 below.
+            for idx in range(cons_len):
+                if idx != cons_len-1:
+                    eqn += f'x{(bigidx+1)*cons_len + idx} + '
+                else:
+                    eqn += f'x{(bigidx+1)*cons_len + idx} == {sink_flow[bigidx]}\n'
+        # cons_mb = my.symbolic.generate_constraint(my.symbolic.generate_solvers(my.symbolic.solve(eqn)))
+
+        # Eqn 2: For each contaminant, contaminant mass balance for sinks
+        for contam_idx, contam in enumerate(self.processes[self.active_processes].iat[0].sink_conc.index):
+            sink_conc = [myprocess.sink_conc[contam].value for myprocess in self.processes[self.active_processes]]
+            source_conc = [myprocess.source_conc[contam].value for myprocess in self.processes[self.active_processes]]
+            # eqn_cb = ''
+            for bigidx in range(cons_len-1): # Goes until cons_len-1 because flows to wastewater are unconstrained. Compensated with the bigidx+1 below.
+                for idx in range(1, cons_len):
+                    if idx != cons_len-1:
+                        eqn += f'x{(bigidx+1)*cons_len + idx}*{source_conc[idx-1]} + '
+                    else:
+                        eqn += f'x{(bigidx+1)*cons_len + idx}*{source_conc[idx-1]} <= {sink_flow[bigidx]*sink_conc[bigidx]}\n'
+            # More than 1 contaminant --> need to merge constraints after each loop
+            if contam_idx > 0:
+                raise NotImplementedError()
+        
+        # Eqn 3: Total mass balance for sources
+        source_flow = []
+        for process in self.processes[self.active_processes]:
+            source_flow.append(process.source_flow.value)
+        # eqn_source = ''
+        for bigidx in range(1, cons_len): # Goes until cons_len-1 because flows from freshwater are unconstrained. Compensated with the bigidx+1 below.
+            for idx in range(cons_len):
+                if idx != cons_len-1:
+                    eqn += f'x{(idx)*cons_len + bigidx} + '
+                else:
+                    eqn += f'x{(idx)*cons_len + bigidx} == {source_flow[bigidx-1]}\n'
+        
+        # Transforming the string of eqns into a Mystic constraint
+        var = [f'x{idx}' for idx in range(cons_len**2)]
+        cons = my.symbolic.generate_constraint(my.symbolic.generate_solvers(my.symbolic.simplify(eqn, variables = var), var), join = my.constraints.and_)
+
+        # Defining the constraint function (as requested by Mystic)
+        # def constraint_mb(flows, cons_len, sink_flow):
+            # mb = [1e20]*cons_len # WW is unconstrained, so I'm just adding 1e20 as "Infinite"
+            # for idx, elem in enumerate(sink_flow):
+                # mb.extend(my.constraints.impose_sum(elem, flows[idx+1::cons_len]))
+            # pdb.set_trace()
+            # return mb
+        # passed_cons_mb = lambda flows: constraint_mb(flows, cons_len, sink_flow)
+
+        def objective(x, *args):
+            mysum = 0
+            for elem in x:
+                #mysum += flows[idx]**0.6 * water_costs[idx]
+                mysum += elem**0.6 * 2
+            return mysum
+        
+        x0 = np.zeros(cons_len**2)
+
+        # Solver settings from hotel_pricing example
+        mon = my.monitors.VerboseMonitor(10)
+        kwds = dict(disp=True, full_output=True, itermon=mon,
+                    gtol=100, ftol=1e-8, maxfun=30000, maxiter=2000)
+
+        mysol = my.solvers.diffev(objective, x0, npop = 40, bounds = bounds, constraints = cons, **kwds)
+        pdb.set_trace()
 
     def save(self, name, overwrite = False):
         # Ensuring the saved file has an extension
