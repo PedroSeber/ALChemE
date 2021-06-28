@@ -87,14 +87,21 @@ class WReN:
         self.active_processes = np.append(self.active_processes, True)
 
         # Appending to the cost matrix, or creating it if the current process is the first
+            # Other matrices exist to help the frontend
         if 'costs' in dir(self):
             col_names = ['WW']
             col_names.extend(self.processes.index[self.active_processes])
             temp = pd.DataFrame(np.zeros((1, len(self.processes) + 1)), index = [process_name], columns = col_names)
             self.costs = self.costs.append(temp)
             self.costs.iloc[:, -1] = 0.0
+            self.upper = self.upper.append(temp)
+            self.upper.iloc[:, -1] = 0.0
+            self.lower = self.lower.append(temp)
+            self.lower.iloc[:, -1] = 0.0
         else:
             self.costs = pd.DataFrame(np.zeros((2, 2)), index = ['FW', process_name], columns = ['WW', process_name])
+            self.upper = pd.DataFrame(np.zeros((2, 2)), index = ['FW', process_name], columns = ['WW', process_name])
+            self.lower = pd.DataFrame(np.zeros((2, 2)), index = ['FW', process_name], columns = ['WW', process_name])
 
         if GUI_oe_tree is not None:
             # Obtain vectors of sink/source concentrations
@@ -280,174 +287,50 @@ class WReN:
         self.results = pd.concat((flow_results, cost_results), keys = ['flows', 'cost'])
         
 
-    def solve_WReN_mystic(self, water_costs, upper = None, lower = None, forbidden = None, required = None):
+    def solve_WReN_scipy(self, water_costs, upper = None, lower = None):
         """
         The main function used by ALChemE to automatically set flowrates among processes, freshwater, and wastewater
         """
-        # Forbidden and required matches
-        if forbidden is None:
-            # +1 on the rows represents "from freshwater", +1 on the columns represents "to wastewater"
-            forbidden = np.zeros((len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1), dtype = bool)
-        elif forbidden.shape != (len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1):
-            raise ValueError('Forbidden must be a %dx%d matrix' % (len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1))
-        if required is None:
-            required = np.zeros_like(forbidden)
-        elif required.shape != forbidden.shape:
-            raise ValueError('Required must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
+        # Cutoff used to ignore very small flows. All elements < 1e-"cutoff_power" become 0
+        cutoff_power = 5
+        cutoff_tol = float(f'1e-{cutoff_power}')
         
-        # Setting the upper heat exchanged limit for each pair of streams
-        if upper is None: # Automatically set the upper limits
-            upper = np.zeros_like(forbidden, dtype = np.float64)
+        # Setting the flow limit for each pair of processes
+        if upper is None or not np.any(upper): # Automatically set the upper limits
+            upper = np.zeros((len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1) )
             upper = self._get_maximum_flows(upper)
         elif isinstance(upper, (int, float)): # A single value was passed, representing a maximum threshold
             temp_upper = upper
-            upper = np.zeros_like(forbidden, dtype = np.float64)
+            upper = np.zeros((len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1) )
             upper = self._get_maximum_flows(upper)
             upper[upper > temp_upper] = temp_upper # Setting the given upper limit only for streams that naturally had a higher limit
-        elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
-            raise ValueError('Upper must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
-        # Setting the lower heat exchanged limit for each pair of streams
+        elif upper.shape != (len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1): # An array-like was passed, but it has the wrong shape
+            raise ValueError('Upper must be a %dx%d matrix' % (len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1))
+        elif isinstance(upper, pd.DataFrame):
+            upper = upper.values
+        
+        # Setting the lower flow limit for each pair of processes
         if lower is None:
-            lower = np.zeros_like(forbidden, dtype = np.float64)
+            lower = np.zeros_like(upper, dtype = np.float64)
         elif isinstance(lower, (int, float)): # A single value was passed, representing a minimum threshold
             if np.sum(lower > upper):
                 if self.GUI_terminal is not None:
                     self.GUI_terminal.print2screen(f'The lower threshold you passed is greater than the maximum heat of {np.sum(lower > upper)} streams\n', True)
                 raise ValueError(f'The lower threshold you passed is greater than the maximum heat of {np.sum(lower > upper)} streams')
-            lower = np.ones_like(forbidden, dtype = np.float64) * lower
-        elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
-            raise ValueError('Lower must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
-        
-        #flows = np.zeros_like(forbidden.flatten(), dtype = np.object)
-        water_costs = water_costs.values.flatten()
-
-        bounds = []
-        for colidx in range(upper.shape[1]):
-            for rowidx in range(upper.shape[0]):
-                bounds.append((lower[rowidx, colidx], upper[rowidx, colidx]))
-
-        # x0 is always 0 because FW is never sent to WW
-        eqn = 'x0 == 0\n'
-        # Eqn 1: Total mass balance for sinks
-        cons_len = len(self.processes[self.active_processes]) + 1 # +1 for FW coming into the process
-        sink_flow = []
-        for process in self.processes[self.active_processes]:
-            sink_flow.append(process.sink_flow.value)
-        for bigidx in range(cons_len-1): # Goes until cons_len-1 because flows to wastewater are unconstrained. Compensated with the bigidx+1 below.
-            for idx in range(cons_len):
-                if idx != cons_len-1:
-                    eqn += f'x{(bigidx+1)*cons_len + idx} + '
-                else:
-                    eqn += f'x{(bigidx+1)*cons_len + idx} == {sink_flow[bigidx]}\n'
-        # cons_mb = my.symbolic.generate_constraint(my.symbolic.generate_solvers(my.symbolic.solve(eqn)))
-
-        # Eqn 2: For each contaminant, contaminant mass balance for sinks
-        for contam_idx, contam in enumerate(self.processes[self.active_processes].iat[0].sink_conc.index):
-            sink_conc = [myprocess.sink_conc[contam].value for myprocess in self.processes[self.active_processes]]
-            source_conc = [myprocess.source_conc[contam].value for myprocess in self.processes[self.active_processes]]
-            for bigidx in range(cons_len-1): # Goes until cons_len-1 because flows to wastewater are unconstrained. Compensated with the bigidx+1 below.
-                for idx in range(1, cons_len):
-                    if idx != cons_len-1:
-                        eqn += f'x{(bigidx+1)*cons_len + idx}*{source_conc[idx-1]} + '
-                    else:
-                        eqn += f'x{(bigidx+1)*cons_len + idx}*{source_conc[idx-1]} <= {sink_flow[bigidx]*sink_conc[bigidx]}\n'
-            # More than 1 contaminant --> need to merge constraints after each loop
-            if contam_idx > 0:
-                raise NotImplementedError()
-        
-        # Eqn 3: Total mass balance for sources
-        source_flow = []
-        for process in self.processes[self.active_processes]:
-            source_flow.append(process.source_flow.value)
-        for bigidx in range(1, cons_len): # Goes until cons_len-1 because flows from freshwater are unconstrained. Compensated with the bigidx+1 below.
-            for idx in range(cons_len):
-                if idx != cons_len-1:
-                    eqn += f'x{(idx)*cons_len + bigidx} + '
-                else:
-                    eqn += f'x{(idx)*cons_len + bigidx} == {source_flow[bigidx-1]}\n'
-        
-        # Transforming the string of eqns into a Mystic constraint
-        # var = [f'x{idx}' for idx in range(cons_len**2)]
-        # examples2/cvxlp.py uses both penalties and constraints. There, they were generated from the same string - does not work
-        # pen = my.symbolic.generate_penalty(my.symbolic.generate_conditions(eqn, variables = var), k = 1e12)
-        cons = my.symbolic.generate_constraint(my.symbolic.generate_solvers(my.symbolic.simplify(eqn)), join = my.constraints.and_)
-
-        # Defining the constraint function (as requested by Mystic)
-        # def constraint_mb(flows, cons_len, sink_flow):
-            # mb = [1e20]*cons_len # WW is unconstrained, so I'm just adding 1e20 as "Infinite"
-            # for idx, elem in enumerate(sink_flow):
-                # mb.extend(my.constraints.impose_sum(elem, flows[idx+1::cons_len]))
-            # pdb.set_trace()
-            # return mb
-        # passed_cons_mb = lambda flows: constraint_mb(flows, cons_len, sink_flow)
-
-        def objective(x):
-            # Using a for elem in args loop does not work
-            mysum = 0
-            for elem in x:
-                #mysum += flows[idx]**0.6 * water_costs[idx]
-                mysum += elem**0.6 * 2
-            return mysum
-        # From examples2/boolean.py. Does not work
-        # my_cost = lambda x: objective(x)
-        
-        x0 = np.zeros(cons_len**2)
-
-        # Solver settings from hotel_pricing example
-        mon = my.monitors.VerboseMonitor(10)
-        kwds = dict(disp=True, full_output=True, itermon=mon,
-                    gtol=100, ftol=1e-8, maxfun=30000, maxiter=2000)
-
-        mysol = my.solvers.diffev(objective, x0, npop = 40, bounds = bounds, constraints = cons, **kwds)
-        pdb.set_trace()
-
-    def solve_WReN_scipy(self, water_costs, upper = None, lower = None, forbidden = None, required = None):
-        """
-        The main function used by ALChemE to automatically set flowrates among processes, freshwater, and wastewater
-        """
-        # Forbidden and required matches
-        if forbidden is None:
-            # +1 on the rows represents "from freshwater", +1 on the columns represents "to wastewater"
-            forbidden = np.zeros((len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1), dtype = bool)
-        elif forbidden.shape != (len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1):
-            raise ValueError('Forbidden must be a %dx%d matrix' % (len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1))
-        if required is None:
-            required = np.zeros_like(forbidden)
-        elif required.shape != forbidden.shape:
-            raise ValueError('Required must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
-        
-        # Setting the upper heat exchanged limit for each pair of streams
-        if upper is None: # Automatically set the upper limits
-            upper = np.zeros_like(forbidden, dtype = np.float64)
-            upper = self._get_maximum_flows(upper)
-        elif isinstance(upper, (int, float)): # A single value was passed, representing a maximum threshold
-            temp_upper = upper
-            upper = np.zeros_like(forbidden, dtype = np.float64)
-            upper = self._get_maximum_flows(upper)
-            upper[upper > temp_upper] = temp_upper # Setting the given upper limit only for streams that naturally had a higher limit
-        elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
-            raise ValueError('Upper must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
-        # Setting the lower heat exchanged limit for each pair of streams
-        if lower is None:
-            lower = np.zeros_like(forbidden, dtype = np.float64)
-        elif isinstance(lower, (int, float)): # A single value was passed, representing a minimum threshold
-            if np.sum(lower > upper):
-                if self.GUI_terminal is not None:
-                    self.GUI_terminal.print2screen(f'The lower threshold you passed is greater than the maximum heat of {np.sum(lower > upper)} streams\n', True)
-                raise ValueError(f'The lower threshold you passed is greater than the maximum heat of {np.sum(lower > upper)} streams')
-            lower = np.ones_like(forbidden, dtype = np.float64) * lower
-        elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
-            raise ValueError('Lower must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
+            lower = np.ones_like(upper, dtype = np.float64) * lower
+        elif lower.shape != upper.shape: # An array-like was passed, but it has the wrong shape
+            raise ValueError('Lower must be a %dx%d matrix' % (upper.shape[0], upper.shape[1]))
+        elif isinstance(lower, pd.DataFrame):
+            lower = lower.values
         
         water_costs = water_costs.values.flatten()[1:]
 
         bounds = []
         for colidx in range(upper.shape[1]):
             for rowidx in range(upper.shape[0]):
-                if forbidden[rowidx, colidx]:
-                    bounds.append((0, 0))
-                elif required[rowidx, colidx] and not lower[rowidx, colidx]:
-                    bounds.append((0.01, upper[rowidx, colidx]))
+                if not upper[rowidx, colidx]:
+                    # SLSQP returns an error if the bounds are (0, 0)
+                    bounds.append((0, cutoff_tol * 0.9))
                 else:
                     bounds.append((lower[rowidx, colidx], upper[rowidx, colidx]))
         # Removing the very first element (FW to WW), as it is always 0
@@ -459,58 +342,84 @@ class WReN:
         sink_flow = []
         for process in self.processes[self.active_processes]:
             sink_flow.append(process.sink_flow.value)
-        for bigidx in range(cons_len-1): # Goes until cons_len-1 because flows to wastewater are unconstrained. Compensated with the bigidx+1 below.
+        for idx in range(cons_len-1): # Goes until cons_len-1 because flows to wastewater are unconstrained. Compensated with the idx+1 below.
             temp_array = np.zeros(cons_len**2 - 1, dtype = np.int8)
-            temp_array[(bigidx+1)*cons_len - 1 : (bigidx+1)*cons_len + cons_len - 1] = 1
-            cons.append(sco.LinearConstraint(temp_array, sink_flow[bigidx], sink_flow[bigidx]) )
+            temp_array[(idx+1)*cons_len - 1 : (idx+1)*cons_len + cons_len - 1] = 1
+            cons.append(sco.LinearConstraint(temp_array, sink_flow[idx], sink_flow[idx]) )
 
         # Eqn 2: For each contaminant, contaminant mass balance for sinks
         for contam_idx, contam in enumerate(self.processes[self.active_processes].iat[0].sink_conc.index):
-            sink_conc = [myprocess.sink_conc[contam].value for myprocess in self.processes[self.active_processes]]
-            source_conc = [myprocess.source_conc[contam].value for myprocess in self.processes[self.active_processes]]
-            for bigidx in range(cons_len-1): # Goes until cons_len-1 because flows to wastewater are unconstrained. Compensated with the bigidx+1 below.
+            sink_conc = [proc.sink_conc[contam].value for proc in self.processes[self.active_processes]]
+            source_conc = [proc.source_conc[contam].value for proc in self.processes[self.active_processes]]
+            for idx in range(cons_len-1): # Goes until cons_len-1 because flows to wastewater are unconstrained. Compensated with the idx+1 below.
                 temp_array = np.zeros(cons_len**2 - 1)
-                temp_array[(bigidx+1)*cons_len : (bigidx+1)*cons_len + cons_len - 1] = source_conc
-                cons.append(sco.LinearConstraint(temp_array, 0, sink_flow[bigidx]*sink_conc[bigidx]) )
-            # More than 1 contaminant --> need to test whether constraints are generated properly
-            if contam_idx > 0:
-                raise NotImplementedError()
+                temp_array[(idx+1)*cons_len : (idx+1)*cons_len + cons_len - 1] = source_conc
+                cons.append(sco.LinearConstraint(temp_array, 0, sink_flow[idx]*sink_conc[idx]) )
         
         # Eqn 3: Total mass balance for sources
         source_flow = []
         for process in self.processes[self.active_processes]:
             source_flow.append(process.source_flow.value)
-        for bigidx in range(cons_len-1): # Goes until cons_len-1 because flows from freshwater are unconstrained
+        for idx in range(cons_len-1): # Goes until cons_len-1 because flows from freshwater are unconstrained
             temp_array = np.zeros(cons_len**2 - 1, dtype = np.int8)
-            temp_array[bigidx :: cons_len] = 1
-            cons.append(sco.LinearConstraint(temp_array, source_flow[bigidx], source_flow[bigidx]) )
+            temp_array[idx :: cons_len] = 1
+            cons.append(sco.LinearConstraint(temp_array, source_flow[idx], source_flow[idx]) )
 
         def objective(x, water_costs):
             return (x**0.6).dot(water_costs)
         cost_fun = lambda x: objective(x, water_costs)
         
-        x0 = np.zeros(cons_len**2 - 1)
+        # Running the optimizer multiple times with different x0 values to increase the chance of reaching the global minimum
+        rng = np.random.default_rng()
+        rng_upper = np.array([elem[1] for elem in bounds])
+        rng_lower = np.array([elem[0] for elem in bounds])
+        success_counter = 0
+        for _ in range(2000):
+            x0 = rng.random(len(bounds)) * (rng_upper-rng_lower) + rng_lower
 
-        options = {'maxiter': 500, 'disp': True}
-        # I could not get the global solver to converge with these settings. These settings led to a runtime of ~ 500 secs on my computer.
-        # mysol = sco.differential_evolution(cost_fun, bounds = bounds, maxiter = 2000, popsize = 40, init = 'sobol', mutation = 1.99, constraints = cons)
-        mysol = sco.minimize(cost_fun, x0, method = 'SLSQP', bounds = bounds, constraints = cons, options = options)
-        my_x = [0]
-        my_x.extend(mysol['x'])
-        my_x = np.array(my_x).reshape(cons_len, cons_len)
-        
-        # Generating the result DataFrames
-        flow_results = np.zeros_like(my_x, dtype = np.float64)
-        # Names of the rows and columns
-        row_names = ['FW']
-        row_names.extend(self.processes.index[self.active_processes])
-        col_names = ['WW']
-        col_names.extend(self.processes.index[self.active_processes])
-        flow_results = pd.DataFrame(my_x, row_names, col_names)
-        cost_results = flow_results**(0.6) * self.costs
-        cost_results = np.round(cost_results, 2) # Money needs only 2 decimals
-        flow_results = np.round(flow_results, 5) # Avoids large number of unnecessary significant digits
-        self.results = pd.concat((flow_results, cost_results), keys = ['flows', 'cost'])
+            options = {'maxiter': 2000, 'eps': 1e-10, 'ftol': 1e-10}
+            # I could not get the global solver to converge with these settings. These settings led to a runtime of ~ 500 secs on my computer.
+            # mysol = sco.differential_evolution(cost_fun, bounds = bounds, maxiter = 2000, popsize = 40, init = 'sobol', mutation = 1.99, constraints = cons)
+            mysol = sco.minimize(cost_fun, x0, method = 'SLSQP', bounds = bounds, constraints = cons, options = options)
+
+            if 'best_objective' not in locals() or mysol['fun'] < best_objective:
+                my_x = [0]
+                my_x.extend(mysol['x'])
+                my_x = np.array(my_x).reshape(cons_len, cons_len).T
+
+                # Asserting the result is valid
+                # Eqn 1: Total mass balance for sinks
+                if not np.allclose(np.sum(my_x, axis = 0)[1:], sink_flow, cutoff_tol, cutoff_tol):
+                    continue
+                
+                # Eqn 2: For each contaminant, contaminant mass balance for sinks
+                for contam_idx in range(len(self.processes.iat[0].sink_conc)):
+                    source_conc = np.array([proc.source_conc.iloc[contam_idx].value for proc in self.processes[self.active_processes]])
+                    sink_conc = np.array([proc.sink_conc.iloc[contam_idx].value for proc in self.processes[self.active_processes]])
+                    # @ means matrix multiplication. Using @ works, while using * and a np.sum() does not
+                    greater = source_conc@my_x[1:, 1:] > sink_flow*sink_conc
+                    if np.any(greater) and not np.allclose( (source_conc@my_x[1:, 1:])[greater], (sink_flow*sink_conc)[greater], cutoff_tol, cutoff_tol):
+                        break
+
+                # Runs only if for loop above was not broken
+                else:
+                    # Eqn 3: Total mass balance for sources
+                    if not np.allclose(np.sum(my_x[1:], axis = 1), source_flow, cutoff_tol, cutoff_tol):
+                        continue
+
+                    best_objective = mysol['fun']
+                    # Generating the result DataFrames
+                    flow_results = np.zeros_like(my_x, dtype = np.float64)
+                    # Names of the rows and columns
+                    row_names = ['FW']
+                    row_names.extend(self.processes.index[self.active_processes])
+                    col_names = ['WW']
+                    col_names.extend(self.processes.index[self.active_processes])
+                    flow_results = pd.DataFrame(my_x, row_names, col_names)
+                    cost_results = flow_results**(0.6) * self.costs
+                    cost_results = np.round(cost_results, 2) # Money needs only 2 decimals
+                    flow_results = np.round(flow_results, cutoff_power) # Avoids large number of unnecessary significant digits
+                    self.results = pd.concat((flow_results, cost_results), keys = ['flows', 'cost'])
 
     def save(self, name, overwrite = False):
         # Ensuring the saved file has an extension
@@ -547,6 +456,9 @@ class WReN:
         Auxiliary function to calculate the maximum flow rate transferable between two streams.
         Shouldn't be called by the user; rather, it is automatically called by solve_WReN().
         """
+        if isinstance(upper, pd.DataFrame):
+            upper = upper.values
+        
         for rowidx in range(upper.shape[0]):
             for colidx in range(upper.shape[1]):
                 # No freshwater goes to wastewater
