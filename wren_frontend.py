@@ -484,7 +484,7 @@ class WReN_optimization_suite(ttk.Frame):
     
     def run_optimization(self):
         self.WReN_terminal_display.print2screen('Running WReN optimization...', False)
-        self.WReN_object.solve_WReN_scipy(self.WReN_object.costs, self.WReN_object.upper, self.WReN_object.lower)
+        self.WReN_object.solve_WReN(self.WReN_object.costs, self.WReN_object.upper, self.WReN_object.lower)
         self.WReN_terminal_display.print2screen(f'Cost: ${self.WReN_object.results.loc["cost"].sum().sum():.2f}\n', False)
         self.WReN_terminal_display.print2screen(f'Solution Match Matrix (Flow Rate in {self.WReN_object.flow_unit})', False)
         self.WReN_terminal_display.print2screen(str(self.WReN_object.results.loc['flows']) + '\n', False)
