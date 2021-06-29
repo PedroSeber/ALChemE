@@ -14,10 +14,8 @@ import warnings
 import os
 import pickle
 # Used in the WReN.solve_WReN() functions
-from gekko import GEKKO
-import mystic as my
 import scipy.optimize as sco
-import pdb
+from joblib import Parallel, delayed, cpu_count
 
 class WReN:
     """
@@ -163,136 +161,13 @@ class WReN:
         else:
             raise ValueError(f'{obj_to_del} not found in the processes')
 
-    def solve_WReN(self, costs, upper = None, lower = None, forbidden = None, required = None):
-        """
-        The main function used by ALChemE to automatically set flowrates among processes, freshwater, and wastewater
-        """
-        # Forbidden and required matches
-        if forbidden is None:
-            # +1 on the rows represents "from freshwater", +1 on the columns represents "to wastewater"
-            forbidden = np.zeros((len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1), dtype = bool)
-        elif forbidden.shape != (len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1):
-            raise ValueError('Forbidden must be a %dx%d matrix' % (len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1))
-        if required is None:
-            required = np.zeros_like(forbidden)
-        elif required.shape != forbidden.shape:
-            raise ValueError('Required must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
-        
-        # Setting the upper heat exchanged limit for each pair of streams
-        if upper is None: # Automatically set the upper limits
-            upper = np.zeros_like(forbidden, dtype = np.float64)
-            upper = self._get_maximum_flows(upper)
-        elif isinstance(upper, (int, float)): # A single value was passed, representing a maximum threshold
-            temp_upper = upper
-            upper = np.zeros_like(forbidden, dtype = np.float64)
-            upper = self._get_maximum_flows(upper)
-            upper[upper > temp_upper] = temp_upper # Setting the given upper limit only for streams that naturally had a higher limit
-        elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
-            raise ValueError('Upper must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
-        # Setting the lower heat exchanged limit for each pair of streams
-        if lower is None:
-            lower = np.zeros_like(forbidden, dtype = np.float64)
-        elif isinstance(lower, (int, float)): # A single value was passed, representing a minimum threshold
-            if np.sum(lower > upper):
-                if self.GUI_terminal is not None:
-                    self.GUI_terminal.print2screen(f'The lower threshold you passed is greater than the maximum heat of {np.sum(lower > upper)} streams\n', True)
-                raise ValueError(f'The lower threshold you passed is greater than the maximum heat of {np.sum(lower > upper)} streams')
-            lower = np.ones_like(forbidden, dtype = np.float64) * lower
-        elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
-            raise ValueError('Lower must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
-        
-        # GEKKO does not like DataFrames
-        if isinstance(costs, pd.DataFrame):
-            costs = np.array(costs)
-        
-        # Starting GEKKO
-        m = GEKKO(remote = False)
 
-        flows = np.zeros_like(forbidden, dtype = np.object)
-        for rowidx in range(flows.shape[0]):
-            for colidx in range(flows.shape[1]):
-                # No freshwater goes to wastewater
-                if rowidx == 0 and colidx == 0:
-                    flows[rowidx, colidx] = m.Const(0, 'FW to WW')
-                # Match from freshwater to a process, but one of the sink concentrations is 0. Thus, the entire sink flow must be supplied with freshwater
-                elif rowidx == 0 and np.any(self.processes[self.active_processes].iat[colidx - 1].sink_conc == 0):
-                    # Float is needed to convert an array of a single value to a non-array value. Array[0] does not work
-                    flows[rowidx, colidx] = m.Const(float(self.processes[self.active_processes].iat[colidx - 1].sink_flow.value), f'FW to {colidx}')
-                # Match from freshwater to a process
-                elif rowidx == 0:
-                    flows[rowidx, colidx] = m.Var(0, lb = lower[rowidx, colidx], ub = upper[rowidx, colidx], name = f'FW to {colidx}')
-                # Match from a process to wastewater
-                elif colidx == 0:
-                    flows[rowidx, colidx] = m.Var(0, lb = lower[rowidx, colidx], ub = upper[rowidx, colidx], name = f'W{rowidx} to WW')
-                # Match between two processes
-                else:
-                    flows[rowidx, colidx] = m.Var(0, lb = lower[rowidx, colidx], ub = upper[rowidx, colidx], name = f'W{rowidx} to {colidx}')
-        
-        for colidx in range(1, flows.shape[1]):
-            # Eqn 1: Total mass balance for sinks
-            m.Equation(m.sum(flows[:, colidx]) == self.processes[self.active_processes].iat[colidx - 1].sink_flow.value)
-            # Eqn 2: For each contaminant, contaminant mass balance for sinks
-            for contam in self.processes[self.active_processes].iat[0].sink_conc.index:
-                conc_mat = [myprocess.source_conc[contam].value for myprocess in self.processes[self.active_processes]]
-                m.Equation(m.sum(flows[1:, colidx] * conc_mat) <= self.processes[self.active_processes].iat[colidx - 1].sink_flow.value * self.processes[self.active_processes].iat[colidx - 1].sink_conc[contam].value)
-        
-        for rowidx in range(1, flows.shape[0]):
-            # Eqn 3: Total mass balance for sources
-            m.Equation(m.sum(flows[rowidx, :]) == self.processes[self.active_processes].iat[rowidx - 1].source_flow.value)
-            # Eqn 4: For each contaminant, contaminant mass balance for sources
-            #for contam in self.processes[self.active_processes].iat[0].sink_conc.index:
-            #    conc_mat = [myprocess.source_conc[contam].value for myprocess in self.processes[self.active_processes]]
-            #    m.Equation(m.sum(flows[1:, colidx] * conc_mat) == self.processes[self.active_processes].iat[colidx - 1].sink_flow.value)
-        
-        m.Minimize(m.sum(flows**(0.6) * costs))
-        m.options.IMODE = 3 # Steady-state optimization
-        m.options.solver = 1 # APOPT solver
-        m.options.csv_write = 2
-        m.options.web = 0
-        m.solver_options = [# nlp sub-problem max iterations
-                            'nlp_maximum_iterations 1000', \
-                            # 1 = depth first, 2 = breadth first
-                            'minlp_branch_method 1', \
-                            # maximum deviation from whole number
-                            'minlp_integer_tol 0.0001', \
-                            # covergence tolerance
-                            'minlp_gap_tol 0.001']
-        m.solve(disp = False)
-
-        # Saving the results to variables (for ease of access)
-        results = m.load_results()
-        flow_results = np.zeros_like(flows, dtype = np.float64)
-        #cost_results = np.zeros_like(flow_results) # Do flow_results * costs instead
-        # Generating names to be used in a Pandas DataFrame with the results
-        row_names = ['FW']
-        row_names.extend(self.processes.index[self.active_processes])
-        col_names = ['WW']
-        col_names.extend(self.processes.index[self.active_processes])
-        flow_results = pd.DataFrame(flow_results, row_names, col_names)
-        #cost_results = pd.DataFrame(costs, row_names, col_names)
-        for rowidx in range(flows.shape[0]):
-            for colidx in range(flows.shape[1]):
-                # No matches between freshwater and wastewater --> Flows and costs are always 0
-                if rowidx == 0 and colidx == 0:
-                    continue
-                # I'd need to import gekko to do proper isinstance() comparisons
-                # 1e-5 is rounding to prevent extremely small heats from being counted. Cutoff may need extra tuning
-                elif 'GK_Operators' in str(type(flows[rowidx, colidx])) and flows[rowidx, colidx].VALUE > 1e-5:
-                    flow_results.iat[rowidx, colidx] = flows[rowidx, colidx].value.value
-                elif 'GKVariable' in str(type(flows[rowidx, colidx])) and flows[rowidx, colidx][0] > 1e-5:
-                    flow_results.iat[rowidx, colidx] = flows[rowidx, colidx][0]
-        cost_results = flow_results**(0.6) * costs
-        cost_results = np.round(cost_results, 2) # Money needs only 2 decimals
-        flow_results = np.round(flow_results, 5) # Avoids large number of unnecessary significant digits
-        self.results = pd.concat((flow_results, cost_results), keys = ['flows', 'cost'])
-        
-
-    def solve_WReN_scipy(self, water_costs, upper = None, lower = None):
+    def solve_WReN(self, water_costs, upper = None, lower = None):
         """
         The main function used by ALChemE to automatically set flowrates among processes, freshwater, and wastewater
         """
         # Cutoff used to ignore very small flows. All elements < 1e-"cutoff_power" become 0
-        cutoff_power = 5
+        cutoff_power = 4
         cutoff_tol = float(f'1e-{cutoff_power}')
         
         # Setting the flow limit for each pair of processes
@@ -369,57 +244,75 @@ class WReN:
             return (x**0.6).dot(water_costs)
         cost_fun = lambda x: objective(x, water_costs)
         
-        # Running the optimizer multiple times with different x0 values to increase the chance of reaching the global minimum
-        rng = np.random.default_rng()
-        rng_upper = np.array([elem[1] for elem in bounds])
-        rng_lower = np.array([elem[0] for elem in bounds])
-        success_counter = 0
-        for _ in range(2000):
-            x0 = rng.random(len(bounds)) * (rng_upper-rng_lower) + rng_lower
+        # Options for the solver
+        options = {'maxiter': 5000, 'eps': 1e-10, 'ftol': 1e-3}
 
-            options = {'maxiter': 2000, 'eps': 1e-10, 'ftol': 1e-10}
-            # I could not get the global solver to converge with these settings. These settings led to a runtime of ~ 500 secs on my computer.
-            # mysol = sco.differential_evolution(cost_fun, bounds = bounds, maxiter = 2000, popsize = 40, init = 'sobol', mutation = 1.99, constraints = cons)
-            mysol = sco.minimize(cost_fun, x0, method = 'SLSQP', bounds = bounds, constraints = cons, options = options)
+        def _solver_for_joblib(self, cost_fun, bounds, cons, options, cons_len, sink_flow, source_flow, cutoff_tol):
+            """
+            Auxiliary function to parallelize the solution using joblib.
+            Shouldn't be called by the user; rather, it is automatically called by solve_WReN().
+            """
+            # Running the optimizer multiple times with different x0 values to increase the chance of reaching the global minimum
+            # Needs to be called inside the joblib function so that each core gives different results
+            rng = np.random.default_rng()
+            rng_upper = np.array([elem[1] for elem in bounds])
+            rng_lower = np.array([elem[0] for elem in bounds])
+            
+            for _ in range(2000):
+                x0 = rng.random(len(bounds)) * (rng_upper-rng_lower) + rng_lower
 
-            if 'best_objective' not in locals() or mysol['fun'] < best_objective:
-                my_x = [0]
-                my_x.extend(mysol['x'])
-                my_x = np.array(my_x).reshape(cons_len, cons_len).T
+                # I could not get the global solver to converge with these settings. These settings led to a runtime of ~ 500 secs on my computer.
+                # mysol = sco.differential_evolution(cost_fun, bounds = bounds, maxiter = 2000, popsize = 40, init = 'sobol', mutation = 1.99, constraints = cons)
+                mysol = sco.minimize(cost_fun, x0, method = 'SLSQP', bounds = bounds, constraints = cons, options = options)
 
-                # Asserting the result is valid
-                # Eqn 1: Total mass balance for sinks
-                if not np.allclose(np.sum(my_x, axis = 0)[1:], sink_flow, cutoff_tol, cutoff_tol):
-                    continue
-                
-                # Eqn 2: For each contaminant, contaminant mass balance for sinks
-                for contam_idx in range(len(self.processes.iat[0].sink_conc)):
-                    source_conc = np.array([proc.source_conc.iloc[contam_idx].value for proc in self.processes[self.active_processes]])
-                    sink_conc = np.array([proc.sink_conc.iloc[contam_idx].value for proc in self.processes[self.active_processes]])
-                    # @ means matrix multiplication. Using @ works, while using * and a np.sum() does not
-                    greater = source_conc@my_x[1:, 1:] > sink_flow*sink_conc
-                    if np.any(greater) and not np.allclose( (source_conc@my_x[1:, 1:])[greater], (sink_flow*sink_conc)[greater], cutoff_tol, cutoff_tol):
-                        break
+                # Check the most recent result only if it is better than the prior best result
+                if 'best_objective' not in locals() or mysol['fun'] < best_objective:
+                    my_x = [0]
+                    my_x.extend(mysol['x'])
+                    my_x = np.array(my_x).reshape(cons_len, cons_len).T
 
-                # Runs only if for loop above was not broken
-                else:
-                    # Eqn 3: Total mass balance for sources
-                    if not np.allclose(np.sum(my_x[1:], axis = 1), source_flow, cutoff_tol, cutoff_tol):
+                    # Asserting the result is valid
+                    # Eqn 1: Total mass balance for sinks
+                    if not np.allclose(np.sum(my_x, axis = 0)[1:], sink_flow, cutoff_tol, cutoff_tol):
                         continue
+                    
+                    # Eqn 2: For each contaminant, contaminant mass balance for sinks
+                    for contam_idx in range(len(self.processes.iat[0].sink_conc)):
+                        source_conc = np.array([proc.source_conc.iloc[contam_idx].value for proc in self.processes[self.active_processes]])
+                        sink_conc = np.array([proc.sink_conc.iloc[contam_idx].value for proc in self.processes[self.active_processes]])
+                        # @ means matrix multiplication. Using @ works, while using * and a np.sum() does not
+                        greater = source_conc@my_x[1:, 1:] > sink_flow*sink_conc
+                        if np.any(greater) and not np.allclose( (source_conc@my_x[1:, 1:])[greater], (sink_flow*sink_conc)[greater], cutoff_tol, cutoff_tol):
+                            break
 
-                    best_objective = mysol['fun']
-                    # Generating the result DataFrames
-                    flow_results = np.zeros_like(my_x, dtype = np.float64)
-                    # Names of the rows and columns
-                    row_names = ['FW']
-                    row_names.extend(self.processes.index[self.active_processes])
-                    col_names = ['WW']
-                    col_names.extend(self.processes.index[self.active_processes])
-                    flow_results = pd.DataFrame(my_x, row_names, col_names)
-                    cost_results = flow_results**(0.6) * self.costs
-                    cost_results = np.round(cost_results, 2) # Money needs only 2 decimals
-                    flow_results = np.round(flow_results, cutoff_power) # Avoids large number of unnecessary significant digits
-                    self.results = pd.concat((flow_results, cost_results), keys = ['flows', 'cost'])
+                    # Runs only if for loop above was not broken
+                    else:
+                        # Eqn 3: Total mass balance for sources
+                        if not np.allclose(np.sum(my_x[1:], axis = 1), source_flow, cutoff_tol, cutoff_tol):
+                            continue
+
+                        best_objective = mysol['fun']
+            return my_x
+        
+        n_cpus = cpu_count()
+        multicore_results = Parallel(n_jobs = n_cpus)(delayed(_solver_for_joblib)(
+            self, cost_fun, bounds, cons, options, cons_len, sink_flow, source_flow, cutoff_tol) for _ in range(n_cpus))
+        
+        # Names of the rows and columns for the results
+        row_names = ['FW']
+        row_names.extend(self.processes.index[self.active_processes])
+        col_names = ['WW']
+        col_names.extend(self.processes.index[self.active_processes])
+        # Getting the best result out of all cores
+        temp_costs = np.array([elem**0.6 * self.costs.values for elem in multicore_results])
+        temp_costs = np.sum(temp_costs, axis = (1, 2))
+        my_x = multicore_results[np.argmin(temp_costs)]
+        # Generating the result DataFrames
+        flow_results = pd.DataFrame(my_x, row_names, col_names)
+        cost_results = flow_results**(0.6) * self.costs
+        cost_results = np.round(cost_results, 2) # Money needs only 2 decimals
+        flow_results = np.round(flow_results, cutoff_power) # Avoids large number of unnecessary significant digits
+        self.results = pd.concat((flow_results, cost_results), keys = ['flows', 'cost'])
 
     def save(self, name, overwrite = False):
         # Ensuring the saved file has an extension
