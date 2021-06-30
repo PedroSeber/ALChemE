@@ -93,12 +93,12 @@ class WReN:
             self.costs = self.costs.append(temp)
             self.costs.iloc[:, -1] = 0.0
             self.upper = self.upper.append(temp)
-            self.upper.iloc[:, -1] = 0.0
+            self.upper.iloc[:, :] = -1
             self.lower = self.lower.append(temp)
             self.lower.iloc[:, -1] = 0.0
         else:
             self.costs = pd.DataFrame(np.zeros((2, 2)), index = ['FW', process_name], columns = ['WW', process_name])
-            self.upper = pd.DataFrame(np.zeros((2, 2)), index = ['FW', process_name], columns = ['WW', process_name])
+            self.upper = pd.DataFrame(np.ones((2, 2)) * -1, index = ['FW', process_name], columns = ['WW', process_name])
             self.lower = pd.DataFrame(np.zeros((2, 2)), index = ['FW', process_name], columns = ['WW', process_name])
 
         if GUI_oe_tree is not None:
@@ -171,18 +171,21 @@ class WReN:
         cutoff_tol = float(f'1e-{cutoff_power}')
         
         # Setting the flow limit for each pair of processes
-        if upper is None or not np.any(upper): # Automatically set the upper limits
+        if upper is None or np.all(upper == -1): # Automatically set the upper limits
             upper = np.zeros((len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1) )
-            upper = self._get_maximum_flows(upper)
+            upper = self._get_maximum_flows()
         elif isinstance(upper, (int, float)): # A single value was passed, representing a maximum threshold
             temp_upper = upper
             upper = np.zeros((len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1) )
-            upper = self._get_maximum_flows(upper)
+            upper = self._get_maximum_flows()
             upper[upper > temp_upper] = temp_upper # Setting the given upper limit only for streams that naturally had a higher limit
         elif upper.shape != (len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1): # An array-like was passed, but it has the wrong shape
             raise ValueError('Upper must be a %dx%d matrix' % (len(self.processes[self.active_processes]) + 1, len(self.processes[self.active_processes]) + 1))
         elif isinstance(upper, pd.DataFrame):
             upper = upper.values
+            if np.any(upper == -1):
+                temp_upper = self._get_maximum_flows()
+                upper[upper == -1] = temp_upper[upper == -1]
         
         # Setting the lower flow limit for each pair of processes
         if lower is None:
@@ -205,7 +208,7 @@ class WReN:
             for rowidx in range(upper.shape[0]):
                 if not upper[rowidx, colidx]:
                     # SLSQP returns an error if the bounds are (0, 0)
-                    bounds.append((0, cutoff_tol * 0.9))
+                    bounds.append((0, cutoff_tol * 0.4))
                 else:
                     bounds.append((lower[rowidx, colidx], upper[rowidx, colidx]))
         # Removing the very first element (FW to WW), as it is always 0
@@ -312,7 +315,9 @@ class WReN:
         cost_results = flow_results**(0.6) * self.costs
         cost_results = np.round(cost_results, 2) # Money needs only 2 decimals
         flow_results = np.round(flow_results, cutoff_power) # Avoids large number of unnecessary significant digits
-        self.results = pd.concat((flow_results, cost_results), keys = ['flows', 'cost'])
+        # Add new result only if there is no saved result or the new result is better
+        if 'results' not in dir(self) or round(cost_results.sum().sum(), 2) < round(self.results.loc['cost'].sum().sum(), 2):
+            self.results = pd.concat((flow_results, cost_results), keys = ['flows', 'cost'])
 
     def save(self, name, overwrite = False):
         # Ensuring the saved file has an extension
@@ -344,13 +349,13 @@ class WReN:
                 file = file_list[0]
         return pickle.load(open(file, 'rb'))
     
-    def _get_maximum_flows(self, upper):
+    def _get_maximum_flows(self):
         """
         Auxiliary function to calculate the maximum flow rate transferable between two streams.
         Shouldn't be called by the user; rather, it is automatically called by solve_WReN().
         """
-        if isinstance(upper, pd.DataFrame):
-            upper = upper.values
+        my_len = len(self.processes[self.active_processes]) + 1 # +1 for FW coming into the process
+        upper = np.zeros((my_len, my_len))
         
         for rowidx in range(upper.shape[0]):
             for colidx in range(upper.shape[1]):
