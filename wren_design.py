@@ -185,7 +185,7 @@ class WReN:
             upper = upper.values
             if np.any(upper == -1):
                 temp_upper = self._get_maximum_flows()
-                upper[upper == -1] = temp_upper[upper == -1]
+                upper[(upper == -1) | (upper > temp_upper)] = temp_upper[(upper == -1) | (upper > temp_upper)]
         
         # Setting the lower flow limit for each pair of processes
         if lower is None:
