@@ -300,7 +300,7 @@ class HEN:
         #self._interval_heats = self._interval_heats[self.active_streams, :] # Removing inactive streams; convenient for place_exchangers()
         
         # Heat limits used in the frontend version of place_exchangers()
-        self.upper_limit = np.zeros((np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities)), dtype = np.object)
+        self.upper_limit = np.ones((np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities)), dtype = np.object) * -1
         self.lower_limit = np.zeros_like(self.upper_limit)
         self.forbidden = np.zeros_like(self.upper_limit, dtype = np.bool)
         self.required = np.zeros_like(self.forbidden)
@@ -809,14 +809,17 @@ class HEN:
         # Setting the upper heat exchanged limit for each pair of streams
         if upper is None: # Automatically set the upper limits
             upper = np.zeros_like(forbidden, dtype = np.float64)
-            upper = self._get_maximum_heats(upper, pinch)
+            upper = self._get_maximum_heats(pinch)
         elif isinstance(upper, (int, float)): # A single value was passed, representing a maximum threshold
             temp_upper = upper
             upper = np.zeros_like(forbidden, dtype = np.float64)
-            upper = self._get_maximum_heats(upper, pinch)
+            upper = self._get_maximum_heats(pinch)
             upper[upper > temp_upper] = temp_upper # Setting the given upper limit only for streams that naturally had a higher limit
         elif upper.shape != forbidden.shape: # An array-like was passed, but it has the wrong shape
             raise ValueError('Upper must be a %dx%d matrix' % (forbidden.shape[0], forbidden.shape[1]))
+        elif np.any(upper == -1): # Some values were passed manually, but others will be updated automatically
+            temp_upper = self._get_maximum_heats(pinch)
+            upper[(upper == -1) | (upper > temp_upper)] = temp_upper[(upper == -1) | (upper > temp_upper)]
         # Setting the lower heat exchanged limit for each pair of streams
         if lower is None:
             lower = np.zeros_like(forbidden, dtype = np.float64)
@@ -1194,7 +1197,7 @@ class HEN:
         with open(name, 'rb') as f:
             return pickle.load(f)
     
-    def _get_maximum_heats(self, upper, pinch):
+    def _get_maximum_heats(self, pinch):
         """
         Auxiliary function to calculate the maximum heat transferable between two streams.
         Shouldn't be called by the user; rather, it is automatically called by solve_HEN().
@@ -1212,6 +1215,8 @@ class HEN:
                 num_of_intervals = self._interval_heats[self.active_streams].shape[-1]
             else:
                 num_of_intervals = self._interval_heats[self.active_streams, :-self.first_utility_loc-1].shape[-1]
+        
+        upper = np.zeros((np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities)), dtype = np.object)
         
         # Getting the maximum heats
         for rowidx in range(upper.shape[0]):
