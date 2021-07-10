@@ -40,9 +40,17 @@ class HEN_GUI_frame(tk.Frame):
         tk.Frame.__init__(self, parent, width=parent.winfo_screenwidth(),
                           height = parent.winfo_screenheight())
         
+        # Define variables
+        self.HEN_object = HEN()
+
         # Initialize child frames
-        
-        
+        self.HEN_GUI_input = HEN_GUI_input(self)
+        self.HEN_GUI_object_explorer = HEN_GUI_object_explorer(self)
+        self.HEN_GUI_terminal_display = HEN_GUI_terminal_display(self)
+        self.HEN_GUI_graphics = HEN_GUI_graphics(self)
+        self.HEN_GUI_optimization = HEN_GUI_optimization(self)
+        self.HEN_GUI_constraint_explorer = HEN_GUI_constraint_explorer(self)
+
         # Pack child frames
 
 ##############################################################################
@@ -52,42 +60,111 @@ class HEN_GUI_input(tk.Frame):
     '''
     Frame which contains the user input. Child of HEN_GUI_frame.
     '''
-    def __init__(self, HEN_GUI_frame, HEN_object):
+    def __init__(self, HEN_GUI_frame):
         # Initialize and adjust Frame settings
         tk.Frame.__init__(self, parent=HEN_GUI_frame)
         
         # Define variables
-        self.HEN_object = HEN_object
+        self.HEN_object = HEN_GUI_frame.HEN_object
+        
+        # Initialize frame labels
+        stream_input_label = nameFrame('Stream Input', self)
+        heat_exch_input_label = nameFrame('Heat Exchanger Input', self)
+        utility_input_label = nameFrame('Utility Input', self)
+
+        # Pack widgets
+    
+    def add_stream(self):
         pass
 
-class HEN_GUI_object_explorer(tk.Treeview):
+    def add_heat_exchanger(self):
+        pass
+
+    def add_utility(self):
+        pass
+
+class HEN_GUI_object_explorer(tk.Frame):
     '''
     Frame which contains the object explorer. Child of HEN_GUI_frame. Parent
     of HEN_GUI_object_explorer_treeview.
     '''
-    def __init__(self):
+    def __init__(self, HEN_GUI_frame):
+        # Initialize and adjust Frame settings
+        tk.Frame.__init__(self, parent=HEN_GUI_frame)
+
+        # Define variables
+        self.HEN_object = HEN_GUI_frame.HEN_object
+
+        # Initialize frame label
+        object_explorer_label = nameFrame('Object Explorer', self)
+
+        # Pack widgets
+
+    def add_object(self):
         pass
 
-class HEN_GUI_terminal_display(tk.Text):
+    def delete_object(self):
+        pass
+
+class HEN_GUI_terminal_display(tk.Frame):
     '''
     Frame which contains the terminal display. Child of HEN_GUI_frame. Parent
     of HEN_GUI_terminal_display_text.
     '''
-    def __init__(self):
+    def __init__(self, HEN_GUI_frame):
+        # Initialize and adjust Frame settings
+        tk.Frame.__init__(self, parent=HEN_GUI_frame)
+        
+        # Initialize frame label
+        terminal_display_label = nameFrame('Terminal Display', self)
+
+        # Pack widgets
+
+    def update_display(self):
+        pass
+
+    def clear_display(self):
         pass
 
 class HEN_GUI_graphics(tk.Frame):
     '''
     Frame which conatins the graphics tools. Child of HEN_GUI_frame.
     '''
-    def __init__(self):
+    def __init__(self, HEN_GUI_frame):
+        # Initialize and adjust Frame settings
+        tk.Frame.__init__(self, parent=HEN_GUI_frame)
+        
+        # Define variables
+        self.HEN_object = HEN_GUI_frame.HEN_object
+
+        # Initialize frame label
+        graphics_label = nameFrame('Graphical Tools', self)
+
+        # Pack widgets
+
+    def show_tid(self):
+        pass
+
+    def show_composite_curve(self):
         pass
 
 class HEN_GUI_optimizaion(tk.Frame):
     '''
     Frame which contains the optimization tools. Child of HEN_GUI_frame.
     '''
-    def __init__(self):
+    def __init__(self, HEN_GUI_frame):
+        # Initialize and adjust Frame setings
+        tk.Frame.__init__(self, parent=HEN_GUI_frame)
+
+        # Define variables
+        self.HEN_object = HEN_GUI_frame.HEN_object
+
+        # Initialize frame label
+        optimization_label = nameFrame('Optimization Tools', self)
+
+        # Pack widgets
+
+    def run_optimization(self):
         pass
 
 class HEN_GUI_constraint_explorer(tk.Frame):
@@ -95,7 +172,19 @@ class HEN_GUI_constraint_explorer(tk.Frame):
     Frame which contains the constraint explorer. Child of HEN_GUI_frame.
     Parent of HEN_GUI_constraint_explorer_treeview.
     '''
-    def __init__(self):
+    def __init__(self, HEN_GUI_frame):
+        # Initialize and adjust Frame settings
+        tk.Frame.__init__(self, parent=HEN_GUI_frame)
+
+        # Initialize frame label
+        constraint_explorer_label = nameFrame('Constraint Explorer', self)
+
+        # Pack widget
+
+    def add_object(self):
+        pass
+
+    def delete_object(self):
         pass
 
 ##############################################################################
@@ -105,23 +194,26 @@ class HEN_GUI_object_explorer_treeview(tk.Treeview):
     '''
     Treeview widget for the object explorer. Child of HEN_GUI_object_explorer.
     '''
-    def __init__(self):
-        pass
+    def __init__(self, HEN_GUI_object_explorer):
+        # Initialize and adjust Treeview settings
+        tk.Treeview.__init__(self, parent=HEN_GUI_object_explorer)
 
 class HEN_GUI_terminal_display_text(tk.Text):
     '''
-    Text widget for the terminal display. Child of HEN_GUI_terminal display.
+    Text widget for the terminal display. Child of HEN_GUI_terminal_display.
     '''
-    def __init__(self):
-        pass
+    def __init__(self, HEN_GUI_terminal_display):
+        # Initialize and adjust Text settings
+        tk.Treeview.__init__(self, parent=HEN_GUI_terminal_display)
 
 class HEN_GUI_constraint_explorer_treeview(tk.Treeview):
     '''
     Treeview widget for the constraint explorer. Child of 
     HEN_GUI_object_explorer.
     '''
-    def __init__(self):
-        pass
+    def __init__(self, HEN_GUI_constraint_explorer):
+        # Initialize and adjust Treeview settings
+        tk.Treeview.__init__(self, parent=HEN_GUI_constraint_explorer)
 
 ##############################################################################
 # LOCAL FUNCTIONS
