@@ -43,7 +43,7 @@ myhen.add_utility('cold', 20, 0.05) # Creates a cold utility with T = 20 °C and
 myhen.add_utility('hot', 500, 1, temp_unit = u.delta_degF) # Equivalent to myhen.add_utility('hot', 260, 1) if the HEN's temp_unit is °C
 ```
 After adding all relevant streams and utilities, the user should run the `HEN.get_parameters()` method. This method calculates the pinch point location and the minimum utilities required, and generates essential information other methods require. **Other methods will fail if `HEN.get_parameters()` is not run, or if a stream/utility is added and `HEN.get_parameters()` is not run again.**\
-Next, you are free to use the plotting tools or the solver. The plotting tools can generate temperature interval diagrams (TIDs) and composite curves (CCs). TIDs show some extra information about the system, and the user may hide these during the function call:
+Next, the user may use the plotting tools or the solver. The plotting tools can generate temperature interval diagrams (TIDs) and composite curves (CCs). TIDs show some extra information about the system, and the user may hide these during the function call:
 ```python
 # TIDs
 myhen.make_tid() # TID with temperature and stream property information
@@ -52,12 +52,11 @@ myhen.make_tid(show_temperatures = False, show_properties = False) # TID without
 # CCs
 myhen.make_cc() # No information customization is available for the CCs
 ```
-The solver method, `HEN.solve_HEN()` will automatically generate stream matches over a subnetwork (that is, above or below pinch). In its most basic form, the software calculates the maximum heat that can be exchanged between any two streams automatically and returns the location of, the heat exchanged within, and the cost of each exchanger. The user can manually set upper or lower limits on each match (for example, to prevent very small heat exchangers from being used). The user can also forbid or require certain matches. No HEN may exist which simultaneously obeys the MER and the forbidden / restricted matches, which will cause the program to return an error. To add any constraint, either generate your own array-like object and pass it to `HEN.solve HEN()` or edit the pre-built arrays as shown below:
+The solver method, `HEN.solve_HEN()` will automatically generate stream matches over a subnetwork (that is, above or below pinch). In its most basic form, the software calculates the maximum heat that can be exchanged between any two streams automatically and returns the location of, the heat exchanged within, and the cost of each exchanger. The user can manually set upper or lower limits on each match (for example, to prevent very small heat exchangers from being used, or to forbid a match by settting its upper limit = 0). The user can also require certain matches without demanding a lower heat limit. No HEN may exist which simultaneously obeys the MER and the restrictions made by the user, which will cause the program to return an error. To add any constraint, either generate your own array-like object and pass it to `HEN.solve HEN()` or edit the pre-built arrays as shown below:
 ```python
 # Constraint arrays - for ease-of-use, edit these and pass them to myhen.solve_HEN()
 myhen.upper_limit
 myhen.lower_limit
-myhen.forbidden
 myhen.required
 
 # Solving the network without any constraints
@@ -66,7 +65,6 @@ myhen.solve_HEN('below')
 
 # Solving with some constraints
 myhen.solve_HEN('above', upper = myhen.upper_limit)
-myhen.solve_HEN('below', forbidden = myhen.forbidden)
 myhen.solve_HEN('above', lower = myhen.lower_limit)
 myhen.solve_HEN('above', required = myhen.required)
 ```
@@ -91,7 +89,7 @@ myhen.solve_HEN('above', lower = myhen.lower_limit, depth = 3)
 myhen.solve_HEN('below', required = myhen.required, depth = 1)
 
 # A simple way to view all solutions at once.
-# Replace results_above for results_below if viewing solutions below the pinch point.
+# Replace results_above with results_below if viewing solutions below the pinch point.
 for idx, sol in enumerate(myhen.results_above):
     print(f'Solution {idx+1}')
     print(sol.loc['Q'])
