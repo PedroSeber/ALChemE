@@ -15,6 +15,7 @@ import os
 import pickle
 # Used in the WReN.solve_WReN() functions
 import scipy.optimize as sco
+from scipy.stats.qmc import LatinHypercube, scale
 from joblib import Parallel, delayed, cpu_count
 
 class WReN:
@@ -260,23 +261,22 @@ class WReN:
             rng = np.random.default_rng()
             rng_upper = np.array([elem[1] for elem in bounds])
             rng_lower = np.array([elem[0] for elem in bounds])
+            starting_points = rng.random( (2000, len(bounds)) ) * (rng_upper-rng_lower) + rng_lower
             
-            for _ in range(2000):
-                x0 = rng.random(len(bounds)) * (rng_upper-rng_lower) + rng_lower
-
+            for x0 in starting_points:
                 # I could not get the global solver to converge with these settings. These settings led to a runtime of ~ 500 secs on my computer.
                 # mysol = sco.differential_evolution(cost_fun, bounds = bounds, maxiter = 2000, popsize = 40, init = 'sobol', mutation = 1.99, constraints = cons)
                 mysol = sco.minimize(cost_fun, x0, method = 'SLSQP', bounds = bounds, constraints = cons, options = options)
 
                 # Check the most recent result only if it is better than the prior best result
                 if 'best_objective' not in locals() or mysol['fun'] < best_objective:
-                    my_x = [0]
-                    my_x.extend(mysol['x'])
-                    my_x = np.array(my_x).reshape(cons_len, cons_len).T
+                    temp = [0]
+                    temp.extend(mysol['x'])
+                    temp = np.array(temp).reshape(cons_len, cons_len).T
 
                     # Asserting the result is valid
                     # Eqn 1: Total mass balance for sinks
-                    if not np.allclose(np.sum(my_x, axis = 0)[1:], sink_flow, cutoff_tol, cutoff_tol):
+                    if not np.allclose(np.sum(temp, axis = 0)[1:], sink_flow, cutoff_tol, cutoff_tol):
                         continue
                     
                     # Eqn 2: For each contaminant, contaminant mass balance for sinks
@@ -284,30 +284,96 @@ class WReN:
                         source_conc = np.array([proc.source_conc.iloc[contam_idx].value for proc in self.processes[self.active_processes]])
                         sink_conc = np.array([proc.sink_conc.iloc[contam_idx].value for proc in self.processes[self.active_processes]])
                         # @ means matrix multiplication. Using @ works, while using * and a np.sum() does not
-                        greater = source_conc@my_x[1:, 1:] > sink_flow*sink_conc
-                        if np.any(greater) and not np.allclose( (source_conc@my_x[1:, 1:])[greater], (sink_flow*sink_conc)[greater], cutoff_tol, cutoff_tol):
+                        greater = source_conc@temp[1:, 1:] > sink_flow*sink_conc
+                        if np.any(greater) and not np.allclose( (source_conc@temp[1:, 1:])[greater], (sink_flow*sink_conc)[greater], cutoff_tol, cutoff_tol):
                             break
 
                     # Runs only if for loop above was not broken
                     else:
                         # Eqn 3: Total mass balance for sources
-                        if not np.allclose(np.sum(my_x[1:], axis = 1), source_flow, cutoff_tol, cutoff_tol):
+                        if not np.allclose(np.sum(temp[1:], axis = 1), source_flow, cutoff_tol, cutoff_tol):
                             continue
 
                         best_objective = mysol['fun']
-            return my_x
+                        my_x = temp
+            try:
+                return my_x
+            except UnboundLocalError:
+                return
         
         n_cpus = cpu_count()
         multicore_results = Parallel(n_jobs = n_cpus)(delayed(_solver_for_joblib)(
             self, cost_fun, bounds, cons, options, cons_len, sink_flow, source_flow, cutoff_tol) for _ in range(n_cpus))
+        
+        ############
+
+        def _solver_for_joblib_qmc(self, cost_fun, passed_samples, bounds, cons, options, cons_len, sink_flow, source_flow, cutoff_tol):
+            """
+            Auxiliary function to parallelize the solution using joblib.
+            Shouldn't be called by the user; rather, it is automatically called by solve_WReN().
+            """
+            
+            for x0 in passed_samples:
+                # I could not get the global solver to converge with these settings. These settings led to a runtime of ~ 500 secs on my computer.
+                # mysol = sco.differential_evolution(cost_fun, bounds = bounds, maxiter = 2000, popsize = 40, init = 'sobol', mutation = 1.99, constraints = cons)
+                mysol = sco.minimize(cost_fun, x0, method = 'SLSQP', bounds = bounds, constraints = cons, options = options)
+
+                # Check the most recent result only if it is better than the prior best result
+                if 'best_objective' not in locals() or mysol['fun'] < best_objective:
+                    temp = [0]
+                    temp.extend(mysol['x'])
+                    temp = np.array(temp).reshape(cons_len, cons_len).T
+
+                    # Asserting the result is valid
+                    # Eqn 1: Total mass balance for sinks
+                    if not np.allclose(np.sum(temp, axis = 0)[1:], sink_flow, cutoff_tol, cutoff_tol):
+                        continue
+                    
+                    # Eqn 2: For each contaminant, contaminant mass balance for sinks
+                    for contam_idx in range(len(self.processes.iat[0].sink_conc)):
+                        source_conc = np.array([proc.source_conc.iloc[contam_idx].value for proc in self.processes[self.active_processes]])
+                        sink_conc = np.array([proc.sink_conc.iloc[contam_idx].value for proc in self.processes[self.active_processes]])
+                        # @ means matrix multiplication. Using @ works, while using * and a np.sum() does not
+                        greater = source_conc@temp[1:, 1:] > sink_flow*sink_conc
+                        if np.any(greater) and not np.allclose( (source_conc@temp[1:, 1:])[greater], (sink_flow*sink_conc)[greater], cutoff_tol, cutoff_tol):
+                            break
+
+                    # Runs only if for loop above was not broken
+                    else:
+                        # Eqn 3: Total mass balance for sources
+                        if not np.allclose(np.sum(temp[1:], axis = 1), source_flow, cutoff_tol, cutoff_tol):
+                            continue
+
+                        best_objective = mysol['fun']
+                        my_x = temp # TODO: use .copy() here
+            
+            # There is a small chance all solutions will be rejected. In that case, there is no my_x to be returned
+            try:
+                return my_x
+            except UnboundLocalError:
+                return
+        
+        # Generating random samples with a Latin Hypercube and scaling them to the bounds
+        # n_cpus = cpu_count()
+        # cube = LatinHypercube(len(bounds))
+        # samples = cube.random(2000 * n_cpus)
+        # l_qmc, u_qmc = zip(*bounds) # Same as lower.flatten()[1:], upper.flatten()[1:], but easier
+        # samples = scale(samples, l_qmc, u_qmc)
+        # # Batching the samples in n_cpus groups to call the parallel function fewer times
+        # samples_split = np.array_split(samples, n_cpus)
+        # multicore_results = Parallel(n_jobs = n_cpus)(delayed(_solver_for_joblib_qmc)(
+        #     self, cost_fun, passed_samples, bounds, cons, options, cons_len, sink_flow, source_flow, cutoff_tol) for passed_samples in samples_split)
+        
+        
+        ############
         
         # Names of the rows and columns for the results
         row_names = ['FW']
         row_names.extend(self.processes.index[self.active_processes])
         col_names = ['WW']
         col_names.extend(self.processes.index[self.active_processes])
-        # Getting the best result out of all cores
-        temp_costs = np.array([elem**0.6 * self.costs.values for elem in multicore_results])
+        # Getting the best result out of all cores, ignoring cores that did not find any solution (thus returned None)
+        temp_costs = np.array([elem**0.6 * self.costs.values for elem in multicore_results if np.all(elem != None)])
         temp_costs = np.sum(temp_costs, axis = (1, 2))
         my_x = multicore_results[np.argmin(temp_costs)]
         # Generating the result DataFrames
