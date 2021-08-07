@@ -470,8 +470,7 @@ class HEN:
 
     def _place_exchangers(self, pinch, num_of_intervals, upper, lower, required, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), exchanger_type = 'Fixed Head', called_by_GMS = False):
         """
-        Notes to self (WIP):
-        Equations come from C.A. Floudas, "Nonlinear and Mixed-Integer Optimization", p. 283
+        Equations come from C.A. Floudas, "Nonlinear and Mixed-Integer Optimization", p. 283, and were streamlined by me.
         self._interval_heats has each stream as its rows and each interval as its columns, such that the topmost interval is the rightmost column
         """
 
