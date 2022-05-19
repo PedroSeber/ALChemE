@@ -573,8 +573,8 @@ class HEN:
                     matches[rowidx, colidx] = m.Const(0, f'Y_{rowidx}{colidx}')
                 elif required[rowidx, colidx]:
                     matches[rowidx, colidx] = m.Const(1, f'Y_{rowidx}{colidx}')
-                    m.Equation(lower[rowidx, colidx] <= Q_exchanger[rowidx, colidx])
-                    m.Equation(upper[rowidx, colidx] >= Q_exchanger[rowidx, colidx])
+                    m.Equation(lower[rowidx, colidx]*matches[rowidx, colidx] <= Q_exchanger[rowidx, colidx])
+                    m.Equation(upper[rowidx, colidx]*matches[rowidx, colidx] >= Q_exchanger[rowidx, colidx])
                 else:
                     matches[rowidx, colidx] = m.Var(0, lb = 0, ub = 1, integer = True, name = f'Y_{rowidx}{colidx}')
                     m.Equation(lower[rowidx, colidx]*matches[rowidx, colidx] <= Q_exchanger[rowidx, colidx])
