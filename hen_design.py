@@ -1,6 +1,3 @@
-##############################################################################
-# IMPORT CALLS
-##############################################################################
 # Used everywhere
 import numpy as np
 import pandas as pd
@@ -29,13 +26,13 @@ class HEN:
         self.flow_unit = flow_unit
         self.temp_unit = temp_unit
         self.cp_unit = cp_unit
-        self.streams = pd.Series()
-        self.hot_utilities = pd.Series()
-        self.cold_utilities = pd.Series()
-        self.exchangers = pd.Series()
+        self.streams = pd.Series(dtype = object)
+        self.hot_utilities = pd.Series(dtype = object)
+        self.cold_utilities = pd.Series(dtype = object)
+        self.exchangers = pd.Series(dtype = object)
         self.active_streams = np.array([], dtype = np.bool)
         self.GUI_terminal = GUI_terminal
-        
+
         # Making unyt work since it doesn't like multiplying with °C and °F
         if self.temp_unit == unyt.degC:
             self.delta_temp_unit = unyt.delta_degC
@@ -45,14 +42,14 @@ class HEN:
             self.delta_temp_unit = temp_unit
 
         self.heat_unit = self.flow_unit * self.cp_unit * self.delta_temp_unit
-    
+
     def add_stream(self, t1, t2, cp = None, flow_rate = 1, heat = None, stream_name = None, temp_unit = None, cp_unit = None, flow_unit = None, heat_unit = None, GUI_oe_tree = None):
         if cp is None and heat is None:
             raise ValueError('One of cp or heat must be passed')
         elif cp is not None and heat is not None:
             warnings.warn('You have passed both a cp and a heat. The heat input will be ignored')
 
-        # Converting to default units (as declared via the HEN class)        
+        # Converting to default units (as declared via the HEN class)
         if temp_unit is None:
             t1 *= self.temp_unit
             t2 *= self.temp_unit
@@ -61,13 +58,13 @@ class HEN:
             t1 = t1.to(self.temp_unit)
             t2 *= temp_unit
             t2 = t2.to(self.temp_unit)
-        
+
         if flow_unit is None:
             flow_rate *= self.flow_unit
         else:
             flow_rate *= flow_unit
             flow_rate = flow_rate.to(self.flow_unit)
-        
+
         if cp: # cp was passed; ignoring any value passed in the heat parameter
             if cp_unit is None:
                 cp *= self.cp_unit
@@ -81,7 +78,7 @@ class HEN:
                 heat *= heat_unit
                 heat = heat.to(self.heat_unit)
             cp = heat / (np.abs(t2.value - t1.value) * self.delta_temp_unit * self.flow_unit)
-        
+
         if stream_name is None:
             if t1 > t2: # Hot stream
                 letter = 'H'
@@ -122,7 +119,7 @@ class HEN:
                     warnings.warn(f'Stream {elem} is already inactive. Ignoring this input and continuing')
         else:
             raise TypeError('The streams_to_change parameter should be a string or list/tuple/set of strings')
-    
+
     def deactivate_stream(self, streams_to_change):
         if isinstance(streams_to_change, str): # Only one stream name was passed
             if self.streams[streams_to_change].active:
@@ -141,7 +138,7 @@ class HEN:
                     warnings.warn(f'Stream {elem} is already active. Ignoring this input and continuing')
         else:
             raise TypeError('The streams_to_change parameter should be a string or list/tuple/set of strings')
-    
+
     def add_utility(self, utility_type, temperature, cost = 0, utility_name = None, temp_unit = None, cost_unit = None, GUI_oe_tree = None):
         if utility_type.casefold() in {'hot', 'hot utility', 'h', 'hu'}:
             utility_type = 'hot'
@@ -150,19 +147,19 @@ class HEN:
         else:
             raise ValueError('The utility_type parameter should be either "hot" or "cold"')
 
-        # Converting to default units (as declared via the HEN class)        
+        # Converting to default units (as declared via the HEN class)
         if temp_unit is None:
             temperature *= self.temp_unit
         else:
             temperature *= temp_unit
             temperature = temperature.to(self.temp_unit)
-        
+
         if cost_unit is None: # None that cost unit is in currency / energy (or currency / power), so that's why we divide it by self.heat unit
             cost /= self.heat_unit
         else:
             cost *= cost_unit
             cost = cost.to(1/self.heat_unit)
-        
+
         if utility_name is None:
             idx = 1
             if utility_type == 'hot': # Hot utility
@@ -174,19 +171,19 @@ class HEN:
                 while f'{letter}{idx}' in self.cold_utilities.keys():
                     idx += 1
             utility_name = f'{letter}{idx}'
-            
-        
+
+
         # Generating the utility object and adding it to the HEN object
         temp = pd.Series(Utility(utility_type, temperature, cost), [utility_name])
         if utility_type == 'hot': # Hot utility
             self.hot_utilities = pd.concat([self.hot_utilities, temp])
         else: # Cold utility
             self.cold_utilities = pd.concat([self.cold_utilities, temp])
-            
+
         if GUI_oe_tree is not None:
             oeDataVector = [utility_name, utility_type, temperature, cost, '', 'Active']
-            GUI_oe_tree.receive_new_utility(oeDataVector)            
-    
+            GUI_oe_tree.receive_new_utility(oeDataVector)
+
     def delete(self, obj_to_del):
         if obj_to_del in self.hot_utilities: # More will be added once exchangers to utilities get implemented
             del self.hot_utilities[obj_to_del]
@@ -231,7 +228,7 @@ class HEN:
         for idx, values in enumerate(self.streams.items()): # values[0] has the stream names, values[1] has the properties
             temperatures[idx, 0], temperatures[idx, 1] = values[1].t1, values[1].t2
             cp_vals[idx, 0] = values[1].cp * values[1].flow_rate
-        
+
         self.hot_streams = temperatures[:, 0] > temperatures[:, 1]
         plotted_ylines = np.concatenate((temperatures[self.hot_streams&self.active_streams, :].flatten(), temperatures[~self.hot_streams&self.active_streams, :].flatten() + self.delta_t.value))
         self._plotted_ylines = np.sort(np.unique(plotted_ylines))
@@ -247,8 +244,8 @@ class HEN:
         enthalpy_hot = np.sum(streams_in_interval1 * cp_vals[self.hot_streams&self.active_streams] * delta_plotted_ylines, axis = 0) # sum(FCp_hot) * ΔT
         enthalpy_cold = np.sum(streams_in_interval2 * cp_vals[~self.hot_streams&self.active_streams] * delta_plotted_ylines, axis = 0) # sum(FCp_cold) * ΔT
         q_interval = enthalpy_hot - enthalpy_cold # sum(FCp_hot - FCp_cold) * ΔT_interval
-        
-        
+
+
         q_interval = q_interval[::-1] # Flipping the heat array so it starts from the top
         q_sum = np.cumsum(q_interval)
 
@@ -264,7 +261,7 @@ class HEN:
             print('Warning: there is no pinch point nor a first utility\n')
             if self.GUI_terminal is not None:
                 self.GUI_terminal.print2screen('Warning: there is no pinch point nor a first utility\n', False)
-        
+
         self.last_utility = q_sum[-1] * self.flow_unit*self.delta_temp_unit*self.cp_unit
         self.enthalpy_hot = np.insert(enthalpy_hot, 0, 0) # The first value in enthalpy_hot is defined as 0
         # Shifting the cold enthalpy so that the first value starts at positive last_utility
@@ -298,7 +295,7 @@ class HEN:
                 else:
                     elem.current_t_below = self._plotted_ylines[-1] * self.temp_unit
         #self._interval_heats = self._interval_heats[self.active_streams, :] # Removing inactive streams; convenient for place_exchangers()
-        
+
         # Heat limits used in the frontend version of place_exchangers()
         self.upper_limit = np.ones((np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities)), dtype = np.object) * -1
         self.lower_limit = np.zeros_like(self.upper_limit)
@@ -331,7 +328,7 @@ class HEN:
                     x_tick_labels[hot_idx] = values[0]
                     hot_idx += 1
                 else: # Cold stream
-                    temperatures[cold_idx, 0] = self._plotted_ylines.searchsorted(values[1].t1 + self.delta_t) # Need to add ΔT 
+                    temperatures[cold_idx, 0] = self._plotted_ylines.searchsorted(values[1].t1 + self.delta_t) # Need to add ΔT
                     temperatures[cold_idx, 1] = self._plotted_ylines.searchsorted(values[1].t2 + self.delta_t)
                     cp_vals[cold_idx, 0] = values[1].cp.value
                     x_tick_labels[cold_idx] = values[0]
@@ -353,7 +350,7 @@ class HEN:
         cold_distance = 0.48 / (sum(~self.hot_streams&self.active_streams) + 1)
         cold_idx = 1
         x_tick_loc = [0] * len(temperatures)
-        
+
         # Manipulating the temperatures so that the hot and cold values are on the same y-position, even though they're shifted by delta_t
         for idx in range(len(temperatures)):
             if temperatures[idx, 0] > temperatures[idx, 1]:
@@ -379,13 +376,13 @@ class HEN:
                 cp_unit_plot = str(self.cp_unit * self.flow_unit).replace('delta_deg', '°', 1)
                 cp_text = f'$Fc_p$: {cp_vals[idx][0]:g}'
                 ax1.text(horizontal_loc, cp_text_loc, cp_text, ha = 'center', va = 'bottom') # F_cp value
-        
+
         # Text with the units of Q and Fc_p in the center of the plot
         if show_properties:
                 ax1.text(np.mean(ax1.get_xlim()), q_above_text_loc, f'Q unit: {self.heat_unit}', ha = 'center', va = 'top')
                 ax1.text(np.mean(ax1.get_xlim()), q_below_text_loc, f'Q unit: {self.heat_unit}', ha = 'center', va = 'bottom')
                 ax1.text(np.mean(ax1.get_xlim()), cp_text_loc, f'$Fc_p$ unit: {cp_unit_plot}', ha = 'center', va = 'bottom')
-        
+
         # Horizontal lines for each temperature
         for idx, elem in enumerate(self._plotted_ylines):
             ax1.axhline(idx, color = 'k', linewidth = 0.25)
@@ -394,7 +391,7 @@ class HEN:
                 my_label2 = '               ' + str(elem - self.delta_t.value) + str(self.temp_unit)
                 ax1.text(np.mean(ax1.get_xlim()), idx, my_label1, ha = 'center', va = 'bottom', c = 'red')
                 ax1.text(np.mean(ax1.get_xlim()), idx, my_label2, ha = 'center', va = 'bottom', c = 'blue')
-        
+
         # Labeling the x-axis with the stream names
         ax1.set_xticks(x_tick_loc)
         ax1.set_xticklabels(x_tick_labels)
@@ -408,7 +405,7 @@ class HEN:
             ax1.axhline(len(self._plotted_ylines) - 1, color = 'k', linewidth = 0.5)
             if show_temperatures:
                 ax1.text(np.mean(ax1.get_xlim()), len(self._plotted_ylines) - 1 - 0.01, 'Pinch Point', ha = 'center', va = 'top')
-        
+
         # Using tight_layout() with frontend causes the title / axes ticks to be cropped, and w_pad / h_pad do not seem to help
         if tab_control is None:
             plt.tight_layout()
@@ -440,7 +437,7 @@ class HEN:
         # Hot arrow
         dx = self.enthalpy_hot[hot_index][0]-self.enthalpy_hot[hot_index][1]
         dy = self._plotted_ylines[hot_index][0]-self._plotted_ylines[hot_index][1]
-        ax2.arrow(self.enthalpy_hot[hot_index][1], self._plotted_ylines[hot_index][1], dx, dy, color = 'r', length_includes_head = True, 
+        ax2.arrow(self.enthalpy_hot[hot_index][1], self._plotted_ylines[hot_index][1], dx, dy, color = 'r', length_includes_head = True,
             linewidth = 0.25, head_width = (ylim[1]-ylim[0])*0.02, head_length = (xlim[1]-xlim[0])*0.01)
         # Cold arrow
         dx = np.cumsum(self.enthalpy_cold[cold_index])[-1] - np.cumsum(self.enthalpy_cold[cold_index])[-2]
@@ -479,7 +476,7 @@ class HEN:
 
         # Q_exchanger is how much heat each exchanger will transfer
         # First N rows of Q_exchanger are the N hot utilities; first M columns are the M cold utilities
-        Q_exchanger = np.zeros((np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), 
+        Q_exchanger = np.zeros((np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities),
                                 np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities)), dtype = np.object) # Hot streams and cold streams
         hot_stidx = 0 # Used to iterate over streams via self._interval_heats
         for rowidx in range(Q_exchanger.shape[0]):
@@ -489,7 +486,7 @@ class HEN:
                 if rowidx < len(self.hot_utilities) and (pinch == 'below' or self.first_utility == 0):
                     Q_exchanger[rowidx, colidx] = m.Const(0, f'Q_{rowidx}{colidx}')
                 # No cold utilities are used above pinch
-                elif colidx < len(self.cold_utilities) and (pinch == 'above' or self.last_utility == 0): 
+                elif colidx < len(self.cold_utilities) and (pinch == 'above' or self.last_utility == 0):
                     Q_exchanger[rowidx, colidx] = m.Const(0, f'Q_{rowidx}{colidx}')
                 # No matches between utilities
                 elif rowidx < len(self.hot_utilities) and colidx < len(self.cold_utilities):
@@ -584,7 +581,6 @@ class HEN:
             if rowidx >= len(self.hot_utilities): # Increase hot stream counter iff colidx represents a stream and not a utility
                 hot_stidx += 1
 
-        
         # Eqn 1
         for stidx, rowidx in enumerate(range(len(self.hot_utilities), Q_exchanger.shape[0])): # stidx bc self.hot_streams has only streams, but no utilities
             # Create an equation iff stream is present in subnetwork
@@ -605,13 +601,12 @@ class HEN:
                 m.Equation(m.sum(Q_exchanger[:, colidx]) == m.sum(self._interval_heats[~self.hot_streams&self.active_streams][stidx, -num_of_intervals:]) )
             elif pinch == 'below' and np.sum(self._interval_heats[~self.hot_streams&self.active_streams][stidx, :num_of_intervals]):
                 m.Equation(m.sum(Q_exchanger[:, colidx]) == m.sum(self._interval_heats[~self.hot_streams&self.active_streams][stidx, :num_of_intervals]) )
-        
+
         # Eqn 4
         if pinch == 'below' and self.last_utility > 0:
             for colidx in range(len(self.cold_utilities)):
                 m.Equation(m.sum(Q_exchanger[len(self.hot_utilities):, colidx]) == self.last_utility.value)
-              
-        m.Minimize(m.sum(matches))
+
         m.options.IMODE = 3 # Steady-state optimization
         m.options.solver = 1 # APOPT solver
         m.options.csv_write = 2
@@ -647,8 +642,8 @@ class HEN:
                 # No matches between utilities --> Y, heats, and costs are always 0
                 if rowidx < len(self.hot_utilities) and colidx < len(self.cold_utilities):
                     continue
-            # Elements with nonzero values are stored as intermediates within Q_exc_tot
-            # 2e-5 is rounding to prevent extremely small heats from being counted. Cutoff may need extra tuning
+                # Elements with nonzero values are stored as intermediates within Q_exc_tot
+                # 2e-5 is rounding to prevent extremely small heats from being counted. Cutoff may need extra tuning
                 elif 'LOWER' in dir(Q_exchanger[rowidx, colidx]) and Q_exchanger[rowidx, colidx][0] > 2e-5:
                     Q_tot_results.iat[rowidx, colidx] = Q_exchanger[rowidx, colidx][0]
 
@@ -702,13 +697,13 @@ class HEN:
                             costs.iat[rowidx, colidx] = np.exp(12.3310) * Ac**(-0.8709) * np.exp(0.09005*np.log(Ac)**2)
                         else:
                             costs.iat[rowidx, colidx] = 15.883196220397641*Ac + 24808.40692590638
-                    
+
         Q_tot_results = np.round(Q_tot_results, 5) # Ignoring very small decimals that cause integers to be non-integers
         costs = np.round(costs, 2) # Money needs only 2 decimals
         results = pd.concat((Q_tot_results, costs), keys = ['Q', 'cost'])
         m.cleanup() # Deletes temp files generated by GEKKO
         return results
-    
+
     def solve_HEN(self, pinch, depth = 0, upper = None, lower = None, required = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), exchanger_type = 'Fixed Head'):
         """
         The main function used by ALChemE to automatically place exchangers
@@ -718,7 +713,7 @@ class HEN:
             required = np.zeros((np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities)), dtype = np.bool)
         elif required.shape != (np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities)):
             raise ValueError('Required must be a %dx%d matrix' % (np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities)))
-        
+
         # Restricting the number of intervals based on the pinch point
         if pinch.casefold() in {'above', 'top', 'up'}:
             if self.first_utility_loc == 0:
@@ -736,7 +731,7 @@ class HEN:
                 num_of_intervals = self._interval_heats[self.active_streams, :-self.first_utility_loc-1].shape[-1]
             self.always_forbidden_below = np.zeros_like(required) # Used in the get_more_sols area of this function
             pinch = 'below'
-        
+
         # Setting the upper heat exchanged limit for each pair of streams
         if upper is None: # Automatically set the upper limits
             upper = np.zeros_like(required, dtype = np.float64)
@@ -762,7 +757,7 @@ class HEN:
             lower = np.ones_like(required, dtype = np.float64) * lower
         elif upper.shape != required.shape: # An array-like was passed, but it has the wrong shape
             raise ValueError('Lower must be a %dx%d matrix' % (required.shape[0], required.shape[1]))
-        
+
         # Updating the HEN_object variables (used in the get_more_sols area of this function)
         self.upper_limit = upper
         self.lower_limit = lower
@@ -779,10 +774,10 @@ class HEN:
             self.results_above = [results]
         elif pinch == 'below':
             self.results_below = [results]
-        
+
         if depth == 0: # No further iterations to get more solutions
             return results
-        
+
         ###### get_more_solutions area ######
         # Setting up the individual locations
         final_combinations = []
@@ -793,13 +788,13 @@ class HEN:
                 final_combinations.append(elem)
             elif pinch == 'below' and not (self.always_forbidden_below[elem] or self.required[elem] or self.upper_limit[elem] == 0):
                 final_combinations.append(elem)
-        
+
         ##### Case depth == 1 #####
         print('Current depth = 1')
         total_iterations = len(final_combinations)
         Parallel(n_jobs = -1, require = 'sharedmem')(delayed(self._get_more_sols_depth_one)(
             pinch, upper, lower, required, U, U_unit, exchanger_type, num_of_intervals, total_iterations, iter_count, elem) for iter_count, elem in enumerate(final_combinations))
-        
+
         # Setup for depth > 1
         new_final_combinations = []
         for elem in final_combinations:
@@ -813,7 +808,7 @@ class HEN:
             total_iterations = len(depth_combinations)
             Parallel(n_jobs = -1, require = 'sharedmem')(delayed(self._get_more_sols)(
                 pinch, upper, lower, required, U, U_unit, exchanger_type, num_of_intervals, total_iterations, iter_count, elem) for iter_count, elem in enumerate(depth_combinations))
-            
+
     def _get_more_sols_depth_one(self, pinch, upper, lower, required, U, U_unit, exchanger_type, num_of_intervals, total_iterations, iter_count, elem):
         """
         Auxiliary function of solve_HEN().
@@ -832,7 +827,7 @@ class HEN:
             # Original solution didn't have a match here, so we'll try requiring it
             elif self.results_above[0].loc['Q'].iat[elem] == 0:
                 local_required[elem] = True
-                
+
             print(f'Iteration {iter_count + 1} out of {total_iterations}')
             try:
                 unique_sol = True
@@ -854,7 +849,7 @@ class HEN:
             # Original solution didn't have a match here, so we'll try requiring it
             elif self.results_below[0].loc['Q'].iat[elem] == 0:
                 local_required[elem] = True
-            
+
             print(f'Iteration {iter_count + 1} out of {total_iterations}')
             try:
                 unique_sol = True
@@ -868,7 +863,7 @@ class HEN:
                     print(f'Found a unique solution during iteration {iter_count + 1}. Solution has a cost of ${results.loc["cost"].sum().sum():,.2f}')
             except Exception:
                 self._failed_depth_one.add(elem)
-    
+
     def _get_more_sols(self, pinch, upper, lower, required, U, U_unit, exchanger_type, num_of_intervals, total_iterations, iter_count, elem):
         """
         Auxiliary function of solve_HEN().
@@ -888,7 +883,7 @@ class HEN:
                 # Original solution didn't have a match here, so we'll try requiring it
                 elif self.results_above[0].loc['Q'].iat[depth_elem] == 0:
                     local_required[depth_elem] = True
-                
+
             print(f'Iteration {iter_count + 1} out of {total_iterations}')
             try:
                 unique_sol = True
@@ -902,7 +897,7 @@ class HEN:
                     print(f'Found a unique solution during iteration {iter_count + 1}. Solution has a cost of ${results.loc["cost"].sum().sum():,.2f}')
             except Exception:
                 pass
-        
+
         elif pinch == 'below':
             # Elem is a container of indices, so we'll iterate for each index
             for depth_elem in elem:
@@ -912,7 +907,7 @@ class HEN:
                 # Original solution didn't have a match here, so we'll try requiring it
                 elif self.results_below[0].loc['Q'].iat[depth_elem] == 0:
                     local_required[depth_elem] = True
-                
+
             print(f'Iteration {iter_count + 1} out of {total_iterations}')
             try:
                 unique_sol = True
@@ -927,7 +922,7 @@ class HEN:
             except Exception:
                 pass
 
-    def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, exchanger_delta_t = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC), 
+    def add_exchanger(self, stream1, stream2, heat = 'auto', ref_stream = 1, exchanger_delta_t = None, pinch = 'above', exchanger_name = None, U = 100, U_unit = unyt.J/(unyt.s*unyt.m**2*unyt.delta_degC),
         exchanger_type = 'Fixed Head', cost_a = 0, cost_b = 0, pressure = 0, pressure_unit = unyt.Pa, GUI_oe_tree = None):
 
         # General data validation
@@ -941,12 +936,12 @@ class HEN:
             exchanger_type = 'Kettle Vaporizer'
         else:
             raise ValueError(f'{exchanger_type} is an invalid type')
-        
+
         if cost_a < 0:
             raise ValueError('The cost_a parameter must be >= 0')
         elif cost_b < 0:
             raise ValueError('The cost_b parameter must be >= 0')
-        
+
         if exchanger_name is None:
             idx = 1
             while f'E{idx}' in self.exchangers.keys():
@@ -961,7 +956,7 @@ class HEN:
                     ref_stream = 2
                 else:
                     ref_stream = 1
-            
+
             if exchanger_delta_t is not None: # Operating the exchanger using a stream ΔT value
                 if ref_stream == 1: # Temperature values must be referring to only one of the streams - the first stream in this case
                     heat = self.streams[stream1].cp * self.streams[stream1].flow_rate * (np.abs(exchanger_delta_t)*self.delta_temp_unit)
@@ -986,7 +981,7 @@ class HEN:
             s1_t_above = self.streams[stream1].current_t_above - heat/(self.streams[stream1].cp * self.streams[stream1].flow_rate)
             s2_q_above = self.streams[stream2].q_above_remaining - heat
             s2_t_above = self.streams[stream2].current_t_above + heat/(self.streams[stream2].cp * self.streams[stream2].flow_rate)
-            
+
             # Data validation
             delta_T1 = self.streams[stream1].current_t_above - s2_t_above
             delta_T2 = s1_t_above - self.streams[stream2].current_t_above
@@ -1010,7 +1005,7 @@ class HEN:
                 if self.GUI_terminal is not None:
                     self.GUI_terminal.print2screen(f"WARNING: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T2:.4g}\n", False)
                 warnings.warn(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T2:.4g}")
-            
+
             # Recording the data
             self.streams[stream1].q_above_remaining = s1_q_above
             self.streams[stream1].current_t_above = s1_t_above
@@ -1044,12 +1039,12 @@ class HEN:
                     heat = np.minimum(heat, heat_temp)
             else: # Heat passed was a number, and no temperatures were passed
                 heat = heat * self.streams[stream1].q_above.units
-            
+
             s1_q_below = self.streams[stream1].q_below_remaining - heat
             s1_t_below = self.streams[stream1].current_t_below - heat/(self.streams[stream1].cp * self.streams[stream1].flow_rate)
             s2_q_below = self.streams[stream2].q_below_remaining - heat
             s2_t_below = self.streams[stream2].current_t_below + heat/(self.streams[stream2].cp * self.streams[stream2].flow_rate)
-            
+
             # Data validation
             delta_T1 = self.streams[stream1].current_t_below - s2_t_below
             delta_T2 = s1_t_below - self.streams[stream2].current_t_below
@@ -1073,13 +1068,13 @@ class HEN:
                 if self.GUI_terminal is not None:
                     self.GUI_terminal.print2screen(f"WARNING: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T2:.4g}\n", False)
                 print(f"Warning: match violates minimum ΔT, which equals {self.delta_t:.4g}\nThis match's ΔT is {delta_T2:.4g}")
-            
+
             # Recording the data
             self.streams[stream1].q_below_remaining = s1_q_below
             self.streams[stream1].current_t_below = s1_t_below
             self.streams[stream2].q_below_remaining = s2_q_below
             self.streams[stream2].current_t_below = s2_t_below
-        
+
         # Creating the exchanger object
         delta_T_lm = (delta_T1.value - delta_T2.value) / (np.log(delta_T1.value/delta_T2.value)) * self.delta_temp_unit
         U = U * U_unit
@@ -1088,12 +1083,12 @@ class HEN:
         self.exchangers = pd.concat([self.exchangers, temp])
         self.streams[stream1].connected_exchangers.append(exchanger_name) # Used when the stream is deleted
         self.streams[stream2].connected_exchangers.append(exchanger_name)
-        
+
         if GUI_oe_tree is not None:
             oeDataVector = [exchanger_name, stream1, stream2, heat, self.exchangers[exchanger_name].cost_fob, 'Active']
             print(oeDataVector)
             GUI_oe_tree.receive_new_exchanger(oeDataVector)
-        
+
     def save(self, name, overwrite = False):
         # Ensuring the saved file has an extension
         if '.' not in name:
@@ -1108,7 +1103,7 @@ class HEN:
 
         with open(name, 'wb') as f:
             pickle.dump(self, f)
-        
+
     @classmethod
     def load(cls, name = None):
         # Automatically finding a .p file. Works if there is only one .p file in the working directory
@@ -1123,10 +1118,10 @@ class HEN:
                                  'Alternatively, ensure there\'s only one .p file in the working directory')
             else:
                 name = file_list[0]
-        
+
         with open(name, 'rb') as f:
             return pickle.load(f)
-    
+
     def _get_maximum_heats(self, pinch):
         """
         Auxiliary function to calculate the maximum heat transferable between two streams.
@@ -1145,9 +1140,9 @@ class HEN:
                 num_of_intervals = self._interval_heats[self.active_streams].shape[-1]
             else:
                 num_of_intervals = self._interval_heats[self.active_streams, :-self.first_utility_loc-1].shape[-1]
-        
+
         upper = np.zeros((np.sum(self.hot_streams&self.active_streams) + len(self.hot_utilities), np.sum(~self.hot_streams&self.active_streams) + len(self.cold_utilities)), dtype = np.object)
-        
+
         # Getting the maximum heats
         for rowidx in range(upper.shape[0]):
             for colidx in range(upper.shape[1]):
@@ -1174,11 +1169,11 @@ class HEN:
                     temp_idx2 = colidx - len(self.cold_utilities)
                     if pinch == 'above':
                         lowest_cold = (self._interval_heats[~self.hot_streams&self.active_streams][temp_idx2, -num_of_intervals:] != 0).argmax()
-                        upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[self.hot_streams&self.active_streams][temp_idx1, -num_of_intervals+lowest_cold:]), 
+                        upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[self.hot_streams&self.active_streams][temp_idx1, -num_of_intervals+lowest_cold:]),
                                                         np.sum(self._interval_heats[~self.hot_streams&self.active_streams][temp_idx2, -num_of_intervals:]) ))
                     else:
                         lowest_cold = (self._interval_heats[~self.hot_streams&self.active_streams][temp_idx2, :num_of_intervals] != 0).argmax()
-                        upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[self.hot_streams&self.active_streams][temp_idx1, lowest_cold:num_of_intervals]), 
+                        upper[rowidx, colidx] = np.min((np.sum(self._interval_heats[self.hot_streams&self.active_streams][temp_idx1, lowest_cold:num_of_intervals]),
                                                         np.sum(self._interval_heats[~self.hot_streams&self.active_streams][temp_idx2, :num_of_intervals]) ))
         return upper
 
@@ -1201,7 +1196,7 @@ class Stream():
             self.current_t_above = None
             self.current_t_below = self.t1
             self.stream_type = 'Cold'
-    
+
     def __repr__(self):
         if self.t1 > self.t2:
             stream_type = 'Hot'
@@ -1220,7 +1215,7 @@ class Utility():
         self.temperature = temperature
         self.cost = cost
         # More things can be added if the get_parameters() function is updated to allow multiple utilities
-    
+
     def __repr__(self):
         text = (f'A {self.utility_type} utility at a temperature of {self.temperature}\n'
             f'Has a cost of {self.cost}')
@@ -1263,7 +1258,6 @@ class HeatExchanger():
             f'Has a base cost of ${self.cost_base:,.2f} and a free on board cost of ${self.cost_fob:,.2f}\n')
         return text
 
-
 # UTILITY FUNCTIONS
 def generate_GUI_plot(plot, tabControl, tab_name):
     """
@@ -1276,3 +1270,4 @@ def generate_GUI_plot(plot, tabControl, tab_name):
     new_canvas.draw()
 
     new_canvas.get_tk_widget().pack()
+
