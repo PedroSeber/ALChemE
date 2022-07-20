@@ -14,7 +14,7 @@ setup(
         'pandas',
         'matplotlib',
         'unyt',
-        'gekko',
+        'gekko>=1.0.2',
         'joblib',
         'scipy'
     ],
