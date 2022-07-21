@@ -5,7 +5,7 @@ setup(
     author = 'Pedro Seber, Jonathan Hung, and Arjun Bansal',
     author_email = 'pedro.seber@vanderbilt.edu',
     license = 'MIT',
-    version = '0.4.1',
+    version = '1.0.0',
     description = 'A software suite to assist in Chemical Engineering design',
     zip_safe = False,
     packages = find_packages(),
